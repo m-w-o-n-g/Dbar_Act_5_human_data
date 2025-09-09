@@ -43,8 +43,10 @@ datafname = 'Sbj12_OP_vent_24_05_03_10_33_41_1';
 
 targframe = 220;  % Frame we will reconstruct (target)
 % frame = 18;   % Reference frame (e.g. at max expiration)
-startframe = 2;
-endframe = 5;
+startframe = 1;
+endframe = 20;
+highest_cond = 0; 
+best_frame = 0;
 
 % Directory where program output will be saved. If it doesn't exist, we'll create it
 outdir = 'humanRecons';
@@ -66,6 +68,7 @@ max_trunc = 4.5;         % Final max trunc. radius. Choose something bigger
 cmap = 'jet';
 
 % start of the biggest for loop
+
 for frame = startframe:endframe
 
 %===================================================================================================
@@ -639,7 +642,7 @@ end % All images have now been processed.
 
 % Make each conductivity distribution into a matrix, one for each image.
 gamma = reshape(gamma,num_frames,N,N);
-total_runtime = toc(timestart)
+% total_runtime = toc(timestart)
 
 gamma_real = real(gamma);
 
@@ -694,6 +697,12 @@ end
 
 fclose('all');
 
+gamma_real(isnan(gamma_real))=0;
+avg = mean(mean(gamma_real));
+if avg > highest_cond
+    highest_cond = avg;
+    best_frame = frame;
+end
 
 end % end of the big boi for loop
-
+disp(['Frame number ',num2str(best_frame),' to be chosen for reference frame.'])
