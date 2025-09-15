@@ -19,8 +19,8 @@
 %
 %===================================================================================================
 
-%clear 
-%close all
+% clear 
+% close all
 timeStampstr = strrep(strrep(datestr(now,0),' ', '-'), ':', '-');  % Create timestamp string
 timestart = tic;
 
@@ -41,10 +41,10 @@ datadir = 'ACT5_humanData/';
 % File name for .mat file containing EIT data 
 datafname = 'Sbj12_OP_vent_24_05_03_10_33_41_1';  
 
-targframe = 220;  % Frame we will reconstruct (target)
-% frame = 18;   % Reference frame (e.g. at max expiration)
-startframe = 1;
-endframe = 20;
+% targframe = 10;  % Frame we will reconstruct (target)
+refframe = 22;   % Reference frame (e.g. at max expiration)
+startframe = 20;
+endframe = 30;
 highest_cond = 0; 
 best_frame = 0;
 
@@ -57,7 +57,7 @@ gamma_best = 300;
 % ==================================================================================================
 
 Mk = 16;                  % Size of k-grid is Mk x Mk
-hz = 0.02;               % z-grid step size. Smaller value => finer mesh.
+hz = 0.07;               % z-grid step size. Smaller value => finer mesh.
 
 init_trunc = 4.0;          % Initial trunc. radius. Choose something smallish
 max_trunc = 4.5;         % Final max trunc. radius. Choose something bigger
@@ -69,7 +69,7 @@ cmap = 'jet';
 
 % start of the biggest for loop
 
-for frame = startframe:endframe
+
 
 %===================================================================================================
 %======================== Load and Extract External Data & Physical Parameters =====================
@@ -78,10 +78,12 @@ for frame = startframe:endframe
 % Load measured data. We will pull various physical parameters from this.  
 load([datadir, datafname])
 
+for frame = startframe:endframe
+
 % Voltages
 Vmulti = real(frame_voltage);    % Voltages for all frames
-V = Vmulti(:,:,targframe);       % Target frame voltage
-Vref = Vmulti(:,:,frame);     % Reference frame voltage
+V = Vmulti(:,:,frame);       % Target frame voltage
+Vref = Vmulti(:,:,refframe);     % Reference frame voltage
 
 % Current pattern matrix (unnormalized and including all columns)
 J0 = cur_pattern; 
@@ -287,7 +289,7 @@ for jj = 1:num_frames
     Lhat4 = (A2-1i*B2)*Lambda(Ldiv2+1:numCP,Ldiv2+1:numCP)*(C2.'+1i*D2.');
     Lhat = [Lhat1, Lhat2; Lhat3, Lhat4];
     
-    dLambda = (Lhat - refLhat); % transformed DN map, size numCP x numCP
+    dLambda = Lhat - refLhat; % transformed DN map, size numCP x numCP 
     %dLambda = Lambda - refLambda;
     
     %==================Compute approx. scattering transform================
