@@ -31,6 +31,8 @@ timestart = tic;
 save_dbar_output_as_mat_file = 0;
 display_images_to_screen = 0;
 save_images_as_jpg_files = 0;
+plot_movie = 1;
+saved = 0;
 
 %===================================================================================================
 %======================================== Specify External Data ====================================
@@ -44,7 +46,12 @@ datafname = 'Sbj001_35kHz_vent_24_10_15_10_45_29_1';
 % targframe = 10;   % Frame we will reconstruct (target)
 refframe = 361;      % Reference frame (e.g. at max expiration)
 startframe = 360;    
-endframe = 365;   
+endframe = 363;   
+
+% Standardize colorbar for movie
+total_reconstruct_frames = endframe - startframe + 1; % total number of frames in movie 
+gamma_all = zeros(101, 101, total_reconstruct_frames);
+frame_idx = 1;
 
 all_frames = startframe:endframe;
 all_frames(all_frames == refframe) = [];          % remove refframe from list of frames.
@@ -79,7 +86,7 @@ cmap = 'jet';
 load([datadir, datafname])
 
 % start looping over frames
-parfor frame = startframe:endframe
+for frame = all_frames
 
 
 % Voltages (use these to derive DN map)
@@ -653,6 +660,10 @@ gamma = reshape(gamma,num_frames,N,N);
 
 gamma_real = real(gamma);
 
+gamma_all(:,:,frame_idx) = gamma_real;
+
+frame_idx = frame_idx + 1;
+
 % Switch to DICOM orientation
 % for jj = 1:num_frames
 %     gamma_real(jj,:,:) = fliplr(squeeze(gamma_real(jj,:,:)));
@@ -685,7 +696,8 @@ if(display_images_to_screen == 1 || save_images_as_jpg_files == 1 )
             h = figure('visible', 'off');  % Suppress display to screen
         end
         colormap(cmap);
-        imagesc(xx,xx,fliplr(squeeze(gamma_real(jj,:,:))),[datamin, datamax]);
+        % imagesc(xx,xx,fliplr(squeeze(gamma_all(jj,:,:))),[datamin, datamax]);
+        imagesc(xx,xx,fliplr(squeeze(gamma_all(:,:,1))),[datamin, datamax]);
         set(gca, 'Ydir', 'normal');
         
         colorbar;
@@ -699,7 +711,7 @@ if(display_images_to_screen == 1 || save_images_as_jpg_files == 1 )
 end
 
 if( save_dbar_output_as_mat_file == 1)
-    parsave([outstr, '.mat'],'gamma_real', 'init_trunc', 'max_trunc', 'Mk', 'hz', 'xx', 'numz',  'reffname', 'texpmat' );
+    save([outstr, '.mat'],'gamma_real', 'init_trunc', 'max_trunc', 'Mk', 'hz', 'xx', 'numz',  'reffname', 'texpmat' );
 end
 
 fclose('all');
@@ -710,69 +722,58 @@ end % end looping over frames (the big boi loop)
 % ==================================================================================================
 % ========================================Create Movie with Frame Reconstructions===========================================
 % ==================================================================================================
-% % create video writer object
-% writerObj = VideoWriter('Dbar_recon_video');
-% % set the frame rate to one frame per second
-% set(writerObj,'FrameRate',5);
-% % open the writer
-% open(writerObj);
-% 
-% % Standardizing the colorbar for the image reconstruction
-% max_sigma_all = max(max(max(sigma_all)));
-% min_sigma_all = min(min(min(sigma_all)));
-% range_sigma = max_sigma_all - min_sigma_all;
-% cmax_sigma = max_sigma_all - 0.1*range_sigma;
-% cmin_sigma = min_sigma_all + 0.1*range_sigma;
-% 
-% frame_idx = 1; 
-%     %% Plot
-%     if plot_movie==1
-%         for frame_num = start_frame:end_frame
-%         figure('visible','off')
-%         t = tiledlayout(1,2, 'TileSpacing','Compact','Padding','Compact');
-% 
-%         n1 = nexttile;
-%         imagesc(sinogram_all(:,:,frame_idx))
-%         caxis([cmin_sinogram,cmax_sinogram])
-%         axis square
-%         set(gca,'XTick',[]); set(gca,'YTick',[])
-%         title('Sinogram $R_{\mathrm{odd}}\mu(s,\varphi)$', 'interpreter', 'latex')
-%         colormap(n1, gray)
-% 
-% 
-%         n2 = nexttile;
-%         imagesc(rot90(flipud(sigma_all(:,:,frame_idx))))
-%         caxis([cmin_sigma,cmax_sigma])
-%         axis square
-%         set(gca,'XTick',[]); set(gca,'YTick',[])
-%         title('Reconstructed Conductivity \sigma')
-%         colormap(n2, jet)
-% 
-%         frame_num_double = double(frame_num);%this conversion is somehow needed for title
-% 
-%         % Convert frame_num to string
-%         frame_str = ['Frame Number: ' num2str(frame_num_double)];
-% 
-%         % Position the title outside the tiled layout
-%         title(t,frame_str)
-% 
-%         %     saveas(gcf,[outFname,'.png'])
-%         frame = getframe(gcf);
-%         writeVideo(writerObj,frame);
-%         frame_idx = frame_idx + 1;
-%         end % end for plotting
-%     end
-% 
-%         %% save to files
-%     if saved==1
-%         outdir  = 'real_human_outputs';
-%         if ~exist(outdir, 'dir')
-%             mkdir(outdir)
-%         end
-%         outFname = [outdir, '/', trg_fname, '_tauMAX', strrep(num2str(tauMAX),'.','p'), '_Nang', num2str(Nang), '_tpseudoMAX', strrep(num2str(t_pseudoMAX),'.','p'), '_frame' num2str(frame_num)];
-%         save(outFname, 'sinogram', 'mu_recon', 'sigma_recon', 'tildeT_odd',  'T_odd', 'Nang', 'VHPT_angles', 'tauMAX' , 'small_eps', 't_pseudoMAX' );
-% 
-%     end
-% 
-% % close the writer
-% close(writerObj);
+% create video writer object
+writerObj = VideoWriter('Dbar_recon_video');
+% set the frame rate to one frame per second
+set(writerObj,'FrameRate',5);
+% open the writer
+open(writerObj);
+
+% Standardizing the colorbar for the image reconstruction
+max_gamma_all = max(max(max(gamma_all)));
+min_gamma_all = min(min(min(gamma_all)));
+range_gamma = max_gamma_all - min_gamma_all;
+cmax_gamma = max_gamma_all - 0.1*range_gamma;
+cmin_gamma = min_gamma_all + 0.1*range_gamma;
+
+frame_idx = 1; 
+    %% Plot
+    if plot_movie == 1
+        for frame_num = all_frames
+        figure('visible','on')
+
+        colormap(cmap)
+        % imagesc(rot90(flipud(gamma_all(:,:,frame_idx))))
+        % imagesc(gamma_all(:,:,frame_num))
+        imagesc(xx,xx,fliplr(squeeze(gamma_real(:,:,frame_idx))),[datamin, datamax]);
+        caxis([cmin_gamma,cmax_gamma])
+        colorbar
+        axis square
+        % set(gca,'XTick',[]); set(gca,'YTick',[])
+        set(gca, 'Ydir', 'normal')
+        title(['Frame number = ',num2str(frame_num)]); % add title to figure for reference frame number
+
+        frame_num_double = double(frame_num);%this conversion is somehow needed for title
+
+        % Convert frame_num to string
+        frame_str = ['Frame Number: ' num2str(frame_num_double)];
+
+        %saveas(gcf,[outFname,'.png'])
+        frame_pick = getframe(gcf);
+        writeVideo(writerObj,frame_pick);
+        frame_idx = frame_idx + 1;
+        end % end for plotting
+    end
+
+    %% save to files
+    if saved==1
+        outFname  = 'Dbar_human_recons_movies';
+        if ~exist(outFname, 'dir')
+            mkdir(outFname)
+        end
+        save([outFname, '.mat'],'gamma_real', 'init_trunc', 'max_trunc', 'Mk', 'hz', 'xx', 'numz',  'reffname', 'texpmat' );
+        
+    end
+
+% close the writer
+close(writerObj);
