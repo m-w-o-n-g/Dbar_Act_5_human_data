@@ -31,7 +31,7 @@ timestart = tic;
 save_dbar_output_as_mat_file = 0;
 display_images_to_screen = 0;
 save_images_as_jpg_files = 0;
-plot_movie = 1;
+plot_movie = 0;
 saved = 1;
 
 %===================================================================================================
@@ -41,12 +41,12 @@ saved = 1;
 datadir = 'ACT5_humanData/';
 
 % File name for .mat file containing EIT data 
-datafname = 'Sbj001_35kHz_vent_24_10_15_10_46_15_2';  
+datafname = 'Sbj001_35kHz_vent_24_10_15_10_47_02_3';  
 
 % targframe = 10;   % Frame we will reconstruct (target)
-refframe = 365;      % Reference frame (e.g. at max expiration)
-startframe = 20;    
-endframe = 100;   
+refframe = 374;      % Reference frame (e.g. at max expiration)
+startframe = 100;    
+endframe = 105;   
 
 if refframe >= startframe & refframe <= endframe
     total_reconstruct_frames = endframe - startframe;
@@ -64,7 +64,7 @@ all_frames(all_frames == refframe) = [];          % remove refframe from list of
 disp(all_frames)
 
 % Directory where program output will be saved. If it doesn't exist, we'll create it
-outdir = 'humanRecons';
+outdir = 'Dbar_human_recons_movies';
 
 gamma_best = 300;
 % ==================================================================================================
@@ -729,7 +729,7 @@ end % end looping over frames (the big boi loop)
 % ========================================Create Movie with Frame Reconstructions===========================================
 % ==================================================================================================
 % create video writer object
-writerObj = VideoWriter('Dbar_recon_video');
+writerObj = VideoWriter([outdir,'/Dbar_movie_',datafname]);
 % set the frame rate to one frame per second
 set(writerObj,'FrameRate',5);
 % open the writer
@@ -743,48 +743,47 @@ cmax_gamma = max_gamma_all - 0.1*range_gamma;
 cmin_gamma = min_gamma_all + 0.1*range_gamma;
 
 frame_idx = 1; 
-    %% Plot
+%% Plot
+for frame_num = all_frames
     if plot_movie == 1
-        for frame_num = all_frames
-            if plot_movie == 1
-                figure('visible','on');
-            else
-                figure('Visible','off');
-            end
-
-
-        colormap(cmap)
-        imagesc(flipud(gamma_all(:,:,frame_idx)))
-        % imagesc(gamma_all(:,:,frame_num))
-        % imagesc(xx,xx,fliplr(squeeze(gamma_real(:,:,frame_idx))),[datamin, datamax]);
-        caxis([cmin_gamma,cmax_gamma])
-        colorbar
-        axis square
-        % set(gca,'XTick',[]); set(gca,'YTick',[])
-        set(gca, 'Ydir', 'normal')
-        title(['Frame number = ',num2str(frame_num)]); % add title to figure for reference frame number
-
-        frame_num_double = double(frame_num);%this conversion is somehow needed for title
-
-        % Convert frame_num to string
-        frame_str = ['Frame Number: ' num2str(frame_num_double)];
-
-        %saveas(gcf,[outFname,'.png'])
-        frame_pick = getframe(gcf);
-        writeVideo(writerObj,frame_pick);
-        frame_idx = frame_idx + 1;
-        end % end for plotting
+        figure('visible','on');
+    else
+        figure('Visible','off');
     end
 
-    %% save to files
-    if saved==1
-        outFname  = 'Dbar_human_recons_movies';
-        if ~exist(outFname, 'dir')
-            mkdir(outFname)
-        end
-        save([outFname, '.mat'],'gamma_real', 'init_trunc', 'max_trunc', 'Mk', 'hz', 'xx', 'numz',  'refframe', 'texpmat' );
-        
+
+colormap(cmap)
+imagesc(flipud(gamma_all(:,:,frame_idx)))
+% imagesc(gamma_all(:,:,frame_num))
+% imagesc(xx,xx,fliplr(squeeze(gamma_real(:,:,frame_idx))),[datamin, datamax]);
+caxis([cmin_gamma,cmax_gamma])
+colorbar
+axis square
+% set(gca,'XTick',[]); set(gca,'YTick',[])
+set(gca, 'Ydir', 'normal')
+title(['Frame number = ',num2str(frame_num)]); % add title to figure for reference frame number
+
+frame_num_double = double(frame_num);%this conversion is somehow needed for title
+
+% Convert frame_num to string
+frame_str = ['Frame Number: ' num2str(frame_num_double)];
+
+%saveas(gcf,[outFname,'.png'])
+frame_pick = getframe(gcf);
+writeVideo(writerObj,frame_pick);
+frame_idx = frame_idx + 1;
+end % end for plotting
+
+
+%% save to files
+if saved==1
+    outFname  = ['Dbar_movie_',datafname];
+    if ~exist(outdir, 'dir')
+        mkdir(outdir)
     end
+    save([outdir,'/',outFname, '.mat'],'gamma_real', 'init_trunc', 'max_trunc', 'Mk', 'hz', 'xx', 'numz',  'refframe', 'texpmat' );
+
+end
 
 % close the writer
 close(writerObj);
