@@ -32,7 +32,7 @@ save_dbar_output_as_mat_file = 0;
 display_images_to_screen = 0;
 save_images_as_jpg_files = 0;
 plot_movie = 1;
-saved = 0;
+saved = 1;
 
 %===================================================================================================
 %======================================== Specify External Data ====================================
@@ -41,15 +41,21 @@ saved = 0;
 datadir = 'ACT5_humanData/';
 
 % File name for .mat file containing EIT data 
-datafname = 'Sbj001_35kHz_vent_24_10_15_10_45_29_1';  
+datafname = 'Sbj001_35kHz_vent_24_10_15_10_46_15_2';  
 
 % targframe = 10;   % Frame we will reconstruct (target)
-refframe = 361;      % Reference frame (e.g. at max expiration)
-startframe = 360;    
-endframe = 363;   
+refframe = 365;      % Reference frame (e.g. at max expiration)
+startframe = 20;    
+endframe = 100;   
+
+if refframe >= startframe & refframe <= endframe
+    total_reconstruct_frames = endframe - startframe;
+else
+    total_reconstruct_frames = endframe - startframe + 1;
+end
 
 % Standardize colorbar for movie
-total_reconstruct_frames = endframe - startframe + 1; % total number of frames in movie 
+% total_reconstruct_frames = endframe - startframe; % total number of frames in movie 
 gamma_all = zeros(101, 101, total_reconstruct_frames);
 frame_idx = 1;
 
@@ -711,7 +717,7 @@ if(display_images_to_screen == 1 || save_images_as_jpg_files == 1 )
 end
 
 if( save_dbar_output_as_mat_file == 1)
-    save([outstr, '.mat'],'gamma_real', 'init_trunc', 'max_trunc', 'Mk', 'hz', 'xx', 'numz',  'reffname', 'texpmat' );
+    save([outstr, '.mat'],'gamma_real', 'init_trunc', 'max_trunc', 'Mk', 'hz', 'xx', 'numz',  'refframe', 'texpmat' );
 end
 
 fclose('all');
@@ -740,12 +746,17 @@ frame_idx = 1;
     %% Plot
     if plot_movie == 1
         for frame_num = all_frames
-        figure('visible','on')
+            if plot_movie == 1
+                figure('visible','on');
+            else
+                figure('Visible','off');
+            end
+
 
         colormap(cmap)
-        % imagesc(rot90(flipud(gamma_all(:,:,frame_idx))))
+        imagesc(flipud(gamma_all(:,:,frame_idx)))
         % imagesc(gamma_all(:,:,frame_num))
-        imagesc(xx,xx,fliplr(squeeze(gamma_real(:,:,frame_idx))),[datamin, datamax]);
+        % imagesc(xx,xx,fliplr(squeeze(gamma_real(:,:,frame_idx))),[datamin, datamax]);
         caxis([cmin_gamma,cmax_gamma])
         colorbar
         axis square
@@ -771,7 +782,7 @@ frame_idx = 1;
         if ~exist(outFname, 'dir')
             mkdir(outFname)
         end
-        save([outFname, '.mat'],'gamma_real', 'init_trunc', 'max_trunc', 'Mk', 'hz', 'xx', 'numz',  'reffname', 'texpmat' );
+        save([outFname, '.mat'],'gamma_real', 'init_trunc', 'max_trunc', 'Mk', 'hz', 'xx', 'numz',  'refframe', 'texpmat' );
         
     end
 
