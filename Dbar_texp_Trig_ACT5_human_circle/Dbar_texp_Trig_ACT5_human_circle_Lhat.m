@@ -29,7 +29,7 @@ timestart = tic;
 % ================================= Choose What to Plot and Save ===================================
 % ==================================================================================================
 save_dbar_output_as_mat_file = 0;
-display_images_to_screen = 1;
+display_images_to_screen = 0;
 save_images_as_jpg_files = 0;
 
 %===================================================================================================
@@ -39,12 +39,12 @@ save_images_as_jpg_files = 0;
 datadir = 'ACT5_humanData/';
 
 % File name for .mat file containing EIT data 
-datafname = 'Sbj12_OP_vent_24_05_03_10_33_41_1';  
+datafname = 'modified_16x16_Sbj02_2D_16e_24_10_16_12_39_39_93750';  
 
 % targframe = 10;  % Frame we will reconstruct (target)
-refframe = 22;   % Reference frame (e.g. at max expiration)
-startframe = 20;
-endframe = 30;
+refframe = 10;   % Reference frame (e.g. at max expiration)
+startframe = 11;
+endframe = 2843;
 highest_cond = 0; 
 best_frame = 0;
 
@@ -56,19 +56,16 @@ gamma_best = 300;
 % ================================ Specify Mesh Size Parameters  ===================================
 % ==================================================================================================
 
-Mk = 16;                  % Size of k-grid is Mk x Mk
+Mk = 16;                 % Size of k-grid is Mk x Mk. 
 hz = 0.07;               % z-grid step size. Smaller value => finer mesh.
 
-init_trunc = 4.0;          % Initial trunc. radius. Choose something smallish
+init_trunc = 4.0;        % Initial trunc. radius. Choose something smallish
 max_trunc = 4.5;         % Final max trunc. radius. Choose something bigger
 
 
 
 % Select colormap for figures
 cmap = 'jet';
-
-% start of the biggest for loop
-
 
 
 %===================================================================================================
@@ -78,6 +75,7 @@ cmap = 'jet';
 % Load measured data. We will pull various physical parameters from this.  
 load([datadir, datafname])
 
+% start of the main for-loop
 for frame = startframe:endframe
 
 % Voltages
@@ -208,7 +206,7 @@ k_Big           = K1Big + 1i*K2Big;
 
 %======================Define Green's function beta========================
 
-beta = h*h ./(pi * k_Big); % Mult by h^2 for when we compute the convolution
+beta = h*h ./(pi * k_Big);   % Mult by h^2 for when we compute the convolution
 beta(Mk+1,Mk+1)=0;           % Set beta(0,0) = 0 to avoid singularity.
 
 % Take the fast fourier transform of the Green's function.
@@ -334,6 +332,7 @@ for jj = 1:num_frames
     
     texpmat = reshape(texp,Mk,Mk);
     
+    % plot gamma real and gamma imag 
     % figure
     % subplot(1,2,1)
     % imagesc(real(texpmat))
@@ -356,7 +355,6 @@ for jj = 1:num_frames
     %==========================Solve Dbar Equation=========================
     
     % Loop through all z values in domain
-    
     for ii = 1:numz
         T = TR(:,:,ii);
         m = rhs;   % Computation result, init guess is rhs
@@ -644,6 +642,7 @@ end % All images have now been processed.
 
 % Make each conductivity distribution into a matrix, one for each image.
 gamma = reshape(gamma,num_frames,N,N);
+
 % total_runtime = toc(timestart)
 
 gamma_real = real(gamma);
@@ -674,31 +673,41 @@ outstr = [outdir, '/', datafname, '_R', num2str(init_trunc),'_',  num2str(max_tr
 
 if(display_images_to_screen == 1 || save_images_as_jpg_files == 1 )
     for jj = frames_to_plot
+        
+        % choose [yes/no] to display individual image reconstruction plots to screen
         if( display_images_to_screen == 1 )
-            h = figure;
+            h = figure;                    % create a blank figure window
         else
             h = figure('visible', 'off');  % Suppress display to screen
         end
-        colormap(cmap);
+
+        colormap(cmap); 
+
+        % generate pretty reconstruction
         imagesc(xx,xx,fliplr(squeeze(gamma_real(jj,:,:))),[datamin, datamax]);
         set(gca, 'Ydir', 'normal');
         
         colorbar;
         axis([-1 1 -1 1 ]);
         axis square;
+        
         title(['Frame number = ',num2str(frame)]); % add title to figure for reference frame number
+        
+        % choose [yes/no] to save image individual reconstruction plots as individual .jpg files.
         if( save_images_as_jpg_files == 1)
             print(h,'-djpeg', [outstr '.jpg']);
         end
     end
 end
 
+% choose [yes/no] to save variables used for reconstruction to a .mat file
 if( save_dbar_output_as_mat_file == 1)
     save([outstr, '.mat'],'gamma_real', 'init_trunc', 'max_trunc', 'Mk', 'hz', 'xx', 'numz',  'reffname', 'texpmat' );
 end
 
 fclose('all');
 
+% logic for finding best refframe iteratively.
 gamma_real(isnan(gamma_real))=0;
 avg = mean(mean(gamma_real));
 if avg > highest_cond
@@ -706,5 +715,6 @@ if avg > highest_cond
     best_frame = frame;
 end
 
-end % end of the big boi for loop
+end % end looping over all frames in main for-loop
+
 disp(['Frame number ',num2str(best_frame),' to be chosen for reference frame.'])
