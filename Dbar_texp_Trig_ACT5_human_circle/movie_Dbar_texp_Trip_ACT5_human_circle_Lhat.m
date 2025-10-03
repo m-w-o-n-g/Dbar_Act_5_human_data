@@ -29,7 +29,7 @@ timestart = tic;
 % ================================= Choose What to Plot and Save ===================================
 % ==================================================================================================
 save_dbar_output_as_mat_file = 0;
-display_images_to_screen = 0;
+display_images_to_screen = 1;
 save_images_as_jpg_files = 0;
 plot_movie = 0;
 saved = 1;
@@ -40,37 +40,49 @@ saved = 1;
 % Directory where data is stored:
 datadir = 'ACT5_humanData/';
 
-% File name for .mat file containing EIT data 
-datafname = 'Sbj001_35kHz_vent_24_10_15_10_47_02_3';  
+% File name for .mat file containing EIT data.
+datafname = 'modified_16x16_Sbj02_2D_16e_24_10_16_12_39_39_93750'; 
 
-% targframe = 10;   % Frame we will reconstruct (target)
-refframe = 374;      % Reference frame (e.g. at max expiration)
-startframe = 100;    
-endframe = 105;   
+% Directory for the program output to be saved to. If it doesn't exist, we'll create it later.
+% outdir = 'Dbar_human_recons_movies';
+outdir = 'HumanRecons';
 
+
+%===================================================================================================
+%======================================== Specify Reconstruction Parameters ========================
+%===================================================================================================
+% targframe = 10;    % Frame we will reconstruct (target)
+refframe = 513;      % Reference frame (e.g. at max expiration)
+startframe = 665;    % 1200 was pretty good, 300, 1400 was best so far, 1350 was really good. def also include 750. 
+endframe = 670;   
+
+% determine the total # of frames to reconstruct (we must ignore the reference frame when it's in the range (startframe,endframe))
 if refframe >= startframe & refframe <= endframe
     total_reconstruct_frames = endframe - startframe;
 else
     total_reconstruct_frames = endframe - startframe + 1;
 end
 
-% Standardize colorbar for movie
-% total_reconstruct_frames = endframe - startframe; % total number of frames in movie 
+% initialize gamma_all for storing all frame reconstructions. 
 gamma_all = zeros(101, 101, total_reconstruct_frames);
+
+% set the main for-loop indexing variable to 1.
 frame_idx = 1;
-
+  
+% "grab" all frames in the dataset (MINUS the reference frame).
 all_frames = startframe:endframe;
-all_frames(all_frames == refframe) = [];          % remove refframe from list of frames.
-disp(all_frames)
-
-% Directory where program output will be saved. If it doesn't exist, we'll create it
-outdir = 'Dbar_human_recons_movies';
+all_frames(all_frames == refframe) = [];          % remove refframe index from the list of frames (that we'll iterate over).
+% disp(all_frames)
 
 gamma_best = 300;
+
+% Select colormap for figures
+cmap = 'jet';
+
+
 % ==================================================================================================
 % ================================ Specify Mesh Size Parameters  ===================================
 % ==================================================================================================
-
 Mk = 32;                % Size of k-grid is Mk x Mk
 hz = 0.02;              % z-grid step size used to create the z grid (xx=-1:hz:1). Smaller value => finer mesh.
 
@@ -78,20 +90,18 @@ init_trunc = 4.0;       % Initial trunc. radius. Used to trunc scattering transf
 max_trunc = 4.5;        % Final max trunc. radius. Used to trunc scattering transform. Choose something bigger
 
 
-
-% Select colormap for figures
-cmap = 'jet';
-
-
-
 %===================================================================================================
 %======================== Load and Extract External Data & Physical Parameters =====================
 %===================================================================================================
-
 % Load measured data. We will pull various physical parameters from this.  
 load([datadir, datafname])
 
-% start looping over frames
+
+%===================================================================================================
+%======================== Generate Reconstructions With the Dbar Algorithm =========================
+%===================================================================================================
+% START OF MAIN FOR-LOOP
+% Iterate over all frames in dataset (MINUS reference frames) and fill gamma_all with frame reconstructions. 
 for frame = all_frames
 
 
@@ -682,7 +692,7 @@ datarange = datamax-datamin;
 
 
 % ==================================================================================================
-% ===================================== Set up Output Directory ====================================
+% ============================== Set Up the Output Directory and Filename for Each Frame ===========
 % ==================================================================================================
 if ~exist(outdir, 'dir')
        mkdir(outdir)        
@@ -690,100 +700,142 @@ end
 
 outstr = [outdir, '/', datafname, '_R', num2str(init_trunc),'_',  num2str(max_trunc), '_Mk', num2str(Mk), '_recontime_', timeStampstr]; 
 
-% ==================================================================================================
-% ======================================== Plot and Save ===========================================
-% ==================================================================================================
 
+% ==================================================================================================
+% ================================= Plot and Save Individual Image Reconstruction ==================
+% ==================================================================================================
 if(display_images_to_screen == 1 || save_images_as_jpg_files == 1 )
     for jj = frames_to_plot
+        
+        % choose [yes/no] to display individual image reconstruction images to screen.
         if( display_images_to_screen == 1 )
-            h = figure;
+            h = figure;                    % create a blank figure window.
         else
-            h = figure('visible', 'off');  % Suppress display to screen
+            h = figure('visible', 'off');  % Suppress display to screen.
         end
+        
         colormap(cmap);
-        % imagesc(xx,xx,fliplr(squeeze(gamma_all(jj,:,:))),[datamin, datamax]);
-        imagesc(xx,xx,fliplr(squeeze(gamma_all(:,:,1))),[datamin, datamax]);
+        
+        % generate the pretty image reconstruction.
+        % imagesc(xx,xx,fliplr(squeeze(gamma_all(:,:,1))),[datamin, datamax]);
+        imagesc(xx,xx,flipud(squeeze(gamma_all(:,:,1))),[datamin, datamax]);
+        
         set(gca, 'Ydir', 'normal');
         
         colorbar;
         axis([-1 1 -1 1 ]);
         axis square;
-        title(['Frame number = ',num2str(frame)]); % add title to figure for reference frame number
+        
+        title(['Frame number = ',num2str(frame)]); % add title to figure for reference frame number.
+        
+        % choose [yes/no] to save image individual reconstruction image as a .jpg file.
         if( save_images_as_jpg_files == 1)
             print(h,'-djpeg', [outstr '.jpg']);
         end
     end
 end
 
+% choose [yes/no] to save a .mat file with the variables used for generating the frame reconstruction.
 if( save_dbar_output_as_mat_file == 1)
     save([outstr, '.mat'],'gamma_real', 'init_trunc', 'max_trunc', 'Mk', 'hz', 'xx', 'numz',  'refframe', 'texpmat' );
 end
 
 fclose('all');
 
-end % end looping over frames (the big boi loop)
+end % END MAIN FOR-LOOP ==> gamma_all has been completely filled with 'total_frames'-# of reconstructions.
 
 
 % ==================================================================================================
-% ========================================Create Movie with Frame Reconstructions===========================================
+% =================================== Create a Movie with the Image Reconstructions ================
 % ==================================================================================================
-% create video writer object
-writerObj = VideoWriter([outdir,'/Dbar_movie_',datafname]);
+% set up movie output directories.
+% 'Dbar_human_recons_movies'
+% movie_outdir = [outdir, '/Dbar_movie_', datafname];  % directory for the .avi movie file.
+% movie_outdir = ['Dbar_human_recons_movies/Dbar_movie_', datafname]; % directory for the .avi movie file.
+movie_outdir = 'Dbar_human_recons_movies';           % directory for the .avi movie file.
+% movie_outstr = [outdir,'/',outFname];              % directory for the .mat file.
+% movie_outstr = [movie_outdir, '/', movie_outFname];  % directory for the .mat file. 
+movie_outFname = ['Dbar_movie_', datafname];         % output filename for movie.
+movie_outstr = [movie_outdir, '/', movie_outFname];  % directory for the .mat file. 
+
+
+% create the movie outdir if it doesn't exist.
+if ~exist(movie_outdir, 'dir')
+        mkdir(movie_outdir)
+end
+
+% create video writer object in the output directory.
+% writerObj = VideoWriter([outdir,'/Dbar_movie_',datafname]);
+writerObj = VideoWriter([movie_outdir, '/', movie_outFname]);
+
 % set the frame rate to one frame per second
 set(writerObj,'FrameRate',5);
-% open the writer
+
+% open the writer object.
 open(writerObj);
 
-% Standardizing the colorbar for the image reconstruction
+% Standardizing the colorbar for the image reconstruction.
 max_gamma_all = max(max(max(gamma_all)));
 min_gamma_all = min(min(min(gamma_all)));
 range_gamma = max_gamma_all - min_gamma_all;
 cmax_gamma = max_gamma_all - 0.1*range_gamma;
 cmin_gamma = min_gamma_all + 0.1*range_gamma;
 
+% initialize variable to keep track of the current frame # in the for-loop.
 frame_idx = 1; 
-%% Plot
+
+
+%% Plot movie
+% iterate over all frames (MINUS the reference frame)
 for frame_num = all_frames
+    % choose [yes/no] to display movie to screen.
     if plot_movie == 1
         figure('visible','on');
     else
         figure('Visible','off');
     end
 
+    colormap(cmap)
 
-colormap(cmap)
-imagesc(flipud(gamma_all(:,:,frame_idx)))
-% imagesc(gamma_all(:,:,frame_num))
-% imagesc(xx,xx,fliplr(squeeze(gamma_real(:,:,frame_idx))),[datamin, datamax]);
-caxis([cmin_gamma,cmax_gamma])
-colorbar
-axis square
-% set(gca,'XTick',[]); set(gca,'YTick',[])
-set(gca, 'Ydir', 'normal')
-title(['Frame number = ',num2str(frame_num)]); % add title to figure for reference frame number
+    % generate the pretty image reconstruction.
+    % imagesc(flipud(gamma_all(:,:,frame_idx)))
+    imagesc(flipud(gamma_all(:,:,frame_idx)))
+    % imagesc(xx,xx,fliplr(squeeze(gamma_real(:,:,frame_idx))),[datamin, datamax]);
+    
+    caxis([cmin_gamma,cmax_gamma])
+    colorbar
+    axis square
+    % set(gca,'XTick',[]); set(gca,'YTick',[])
+    set(gca, 'Ydir', 'normal')
 
-frame_num_double = double(frame_num);%this conversion is somehow needed for title
+    title(['Frame number = ',num2str(frame_num)]); % add title to figure for reference frame number.
+    
+    frame_num_double = double(frame_num); % this conversion is somehow needed for title.
+    
+    % Convert frame_num to string.
+    frame_str = ['Frame Number: ' num2str(frame_num_double)];
+    
+    %saveas(gcf,[outFname,'.png'])
+    
+    frame_pick = getframe(gcf);
+    
+    writeVideo(writerObj, frame_pick);
+    
+    frame_idx = frame_idx + 1; % to iterate through all frames in gamma all.
 
-% Convert frame_num to string
-frame_str = ['Frame Number: ' num2str(frame_num_double)];
-
-%saveas(gcf,[outFname,'.png'])
-frame_pick = getframe(gcf);
-writeVideo(writerObj,frame_pick);
-frame_idx = frame_idx + 1;
-end % end for plotting
+end % END PLOTTING MOVIE
 
 
-%% save to files
+%% save movie to file
+% choose [yes/no] to save the movie to a .avi file.
 if saved==1
-    outFname  = ['Dbar_movie_',datafname];
-    if ~exist(outdir, 'dir')
-        mkdir(outdir)
-    end
-    save([outdir,'/',outFname, '.mat'],'gamma_real', 'init_trunc', 'max_trunc', 'Mk', 'hz', 'xx', 'numz',  'refframe', 'texpmat' );
-
+    % outFname  = ['Dbar_movie_', datafname];
+    % if ~exist(outdir, 'dir')
+    %     mkdir(outdir)
+    % end
+    % save([outdir,'/',outFname, '.mat'],'gamma_real', 'init_trunc', 'max_trunc', 'Mk', 'hz', 'xx', 'numz',  'refframe', 'texpmat' );
+    save([movie_outstr, '.mat'], 'gamma_real', 'init_trunc', 'max_trunc', 'Mk', 'hz', 'xx', 'numz',  'refframe', 'texpmat' );
 end
 
-% close the writer
+% close the video writer object
 close(writerObj);
