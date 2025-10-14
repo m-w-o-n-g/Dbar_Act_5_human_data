@@ -1,6 +1,28 @@
-# Dbar_Act_5_human_data
+# About This Repository
+This repository has scripts to perform Dbar reconstruction on human data using the Act 5 machine under the assumption of a circular domain. 
 
-This script performs Dbar reconstruction on human data using the Act 5 machine under the assumption of a circular domain. 
+
+
+# Repository Contents:
+- ACT5_humanData folder:
+    - contains all the human data collected with the Act5 machine.
+- Dbar_human_recons_movies folder:
+    - Contains all the reconstruction movies and corresponding .mat files (with dataset info) for each dataset.
+- Subject_2_Dbar_texp_Trig_ACT5_human_circle_Lhat.m:
+    - Reshapes data matrices from 32x32 --> 16x16 
+    - Use when 16 electrodes were used for data collection (not 32), but the data was entered into a 32x32 matrix ==> NaN entries that cause issues in the reconstruction scripts if not resolved.
+- Dbar_texp_Trig_ACT5_human_circle_Lhat.m:
+    - Finds the best reference frame to use for each dataset.
+- movie_Dbar_texp_Trip_ACT5_human_circle_Lhat.m:
+    - Generates a reconstruction movie for a datset.
+    - Utilizes the original method of truncation (using init_trunc, and max_trunc)
+    - Includes functionality to plot individual frames of a datset for analysis or debugging purposes. 
+- gauss_trunc_movie_Dbar_texp_Trip_ACT5_human_circle_Lhat.m:
+    - Generates a reconstruction movie for the dataset.
+    - Utilizes the Gaussian truncation method.
+    - Includes functionality to plot individual frames of a datset for analysis or debugging purposes.
+
+
 
 # Datasets Chosen from subject001 and subject002
 
