@@ -53,8 +53,8 @@ outdir = 'HumanRecons';
 %===================================================================================================
 % targframe = 10;    % Frame we will reconstruct (target)
 refframe = 37;      % Reference frame (e.g. at max expiration)
-startframe = 200;    % 1200 was pretty good, 300, 1400 was best so far, 1350 was really good. def also include 750. 
-endframe = 200;   
+startframe = 97;    % 1200 was pretty good, 300, 1400 was best so far, 1350 was really good. def also include 750. 
+endframe = 97;   
 
 % determine the total # of frames to reconstruct (we must ignore the reference frame when it's in the range (startframe,endframe))
 if refframe >= startframe & refframe <= endframe
@@ -62,7 +62,6 @@ if refframe >= startframe & refframe <= endframe
 else
     total_reconstruct_frames = endframe - startframe + 1;
 end
-
 
 % set the main for-loop indexing variable to 1.
 frame_idx = 1;
@@ -82,15 +81,20 @@ cmap = 'jet';
 % ================================ Specify Mesh Size Parameters  ===================================
 % ==================================================================================================
 Mk = 32;                % Size of k-grid is Mk x Mk
-hz = 0.03;              % z-grid step size used to create the z grid (xx=-1:hz:1). Smaller value => finer mesh.
+hz = 0.015;              % z-grid step size used to create the z grid (xx=-1:hz:1). Smaller value => finer mesh.
+
+ee = .05; % Used to compute width of Gaussian window in FT. Smaller = more truncation
 
 % initialize gamma_all for storing all frame reconstructions. 
 xx = -1:hz:1;
 N = numel(xx);
 gamma_all = zeros(N, N, total_reconstruct_frames);
 
-init_trunc = 4.1;       % Initial trunc. radius. Used to trunc scattering transform. Choose something smallish
-max_trunc = 4.6;        % Final max trunc. radius. Used to trunc scattering transform. Choose something bigger
+init_trunc = 3.5;       % Initial trunc. radius. Used to trunc scattering transform. Choose something smallish
+max_trunc = 3.5;        % Final max trunc. radius. Used to trunc scattering transform. Choose something bigger
+
+
+percent_to_truncate_colorbar = 10;
 
 
 %===================================================================================================
@@ -199,8 +203,6 @@ Ldiv2 = floor(L/2);  % half hte number of electrodes. Note if L is odd, this mea
 % Construct mesh of z-values representing physical domain. We can throw out
 % z-values outside the domain; these will not be needed in the computation.
 %..........................................................................
-% xx = -1:hz:1;
-% N = numel(xx);
 [z1,z2] = meshgrid(xx,xx);
 
 z = z1 + 1i*z2;
@@ -215,7 +217,7 @@ conjz = conj(z);                            % Complex conj of in-domain z-vals
 % Construct computational grid with M x M elements & complex variable k
 % We will need to eliminate the k-values outside the truncation radius and
 % within a small radius around k=0, but we will need to keep the original
-% k-grid for some comutations.
+% k-grid for some computations.
 %..........................................................................
 x = -s:h:s;
 [K1, K2] = meshgrid(x,x);
@@ -248,10 +250,18 @@ p  = shiftr(1:(Mtimes2),0,Mk,1);
 fft_beta  = fftn(beta(p,p)+beta(p1,p1)+beta(p1,p)+beta(p,p1))/4;
 
 %======================= Construct Current Matrix J =======================
-J = J0(:,1:numCP); 
-for kk = 1:numCP
- J = J/norm(J(:,kk),2);
-end
+% J = J0(:,1:numCP); 
+% for kk = 1:numCP
+%  J = J/norm(J(:,kk),2);
+% end
+
+
+
+CurrAmp = max(max(J));
+
+% Now normalize columns of J with respect to the L2 norm.
+J = J * sqrt(2/L)/CurrAmp;
+J(:,L/2) = J(:,L/2) * sqrt(1/2); % The L/2 col. gets different treatment
 
 %============= Precompute some values necessary for Dbar eqn ==============
 
@@ -346,24 +356,48 @@ for jj = 1:num_frames
     end
     texp(kidx_max)=sumjk+sqrt(2)*(sumk+sumj)+2*akbar_L2.*ak_L2.*dLambda(L2,L2);
     
-    % Implement nonuniform truncation of scattering data
+    % Implement nonuniform truncation of scattering data. this is where
+    % trunc is happening in og way.
     max_real_texp = max(real(texp(kidx_init)));
     max_imag_texp = max(imag(texp(kidx_init)));
+
+
+
+
+    % texp( abs(real(texp)) > max_real_texp | abs(imag(texp)) > max_imag_texp ) = 0;
+    
+    % texp = texp * rmax* dtheta / (eArea); % JM ADDED THE FACTOR RMAX HERE - SEE LINE (5.18) OF ETHAN'S THESIS.  I think a FACTOR CurrAmp^2 does not need to go IN THE DENOMINATOR because our trig patterns do not include the current amplitude
+    % for plotting only
+    
+    % Construct Gaussian window function adjusted to max_trunk
+    a = -log(ee)/max_trunc^2;
+    imaginary_k = imag(k);
+    real_k = real(k);
+    g_window = exp(-a*(real_k.^2 + imaginary_k.^2));
+    
+    tmat = reshape(texp,Mk,Mk);
+
+    tmat_trunc = tmat.*g_window;
+
+
+
+
+    
     min_real_texp = min(real(texp(kidx_init)));
     min_imag_texp = min(imag(texp(kidx_init)));
 
-    imagtexp = imag(texp); 
-    realtexp = real(texp); 
-    realtexp( realtexp>max_real_texp | realtexp<min_real_texp ) = 0; 
-    imagtexp( imagtexp>max_imag_texp | imagtexp<min_imag_texp ) = 0; 
-
-    texp= realtexp + 1i * imagtexp; 
-
-    scaling_factor = rmax * dtheta / (eArea * gamma_best);
-    texp = texp * scaling_factor; 
-    
-    
-    texpmat = reshape(texp,Mk,Mk);
+    % imagtexp = imag(texp); 
+    % realtexp = real(texp); 
+    % realtexp( realtexp>max_real_texp | realtexp<min_real_texp ) = 0; 
+    % imagtexp( imagtexp>max_imag_texp | imagtexp<min_imag_texp ) = 0; 
+    % 
+    % texp= realtexp + 1i * imagtexp; 
+    % 
+    % scaling_factor = rmax * dtheta / (eArea * gamma_best);
+    % texp = texp * scaling_factor; 
+    % 
+    % 
+    % texpmat = reshape(texp,Mk,Mk);
     
     % figure
     % subplot(1,2,1)
@@ -692,6 +726,11 @@ frames_to_plot = 1:num_frames;
 datamin = min(min(min(gamma_real(frames_to_plot,:,:))));
 datamax = max(max(max(gamma_real(frames_to_plot,:,:))));
 datarange = datamax-datamin;
+
+
+colorbartrunc = percent_to_truncate_colorbar * .01;
+datamin = datamin + colorbartrunc * datarange;
+datamax = datamax - colorbartrunc * datarange;
 
 
 % ==================================================================================================
