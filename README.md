@@ -26,11 +26,11 @@ This repository has scripts to perform Dbar reconstruction on human data using t
 
 # Datasets Chosen from subject001 and subject002
 
-### Sbj001_35kHz_perf_24_10_15_10_59_17_2
-- Reference frame: 45
-- Chosen truncation radius: 3.6-4.2
-- Frames to use for reconstruction movie: 153-500
-- Frame with the best image of heart and lungs: 328
+### Sbj001_35kHz_vent_24_10_15_10_45_29_1
+- Reference frame: 361
+- Chosen truncation radisu: 4.0-4.4
+- Frames to use for reconstruction movie: 55-220
+- Frame with the best image of heart and lungs: 70
 
 ### Sbj001_93kHz_perf_24_10_15_11_05_09_1
 - Reference frame: 399
