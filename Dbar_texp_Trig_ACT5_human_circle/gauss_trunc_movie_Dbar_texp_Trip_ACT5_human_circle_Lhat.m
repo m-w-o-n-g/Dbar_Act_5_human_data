@@ -15,12 +15,12 @@
 % Note: this code is a little messy and could be cleaned up some, but it does seem to work fine
 
 % Authors:                  Melody Alsaker, Jennifer Mueller, Peter Muller
-% Date Modified:            September 2024
+% Date Modified:            October 2025
 %
 %===================================================================================================
 
-% clear 
 % close all
+clear all
 timeStampstr = strrep(strrep(datestr(now,0),' ', '-'), ':', '-');  % Create timestamp string
 timestart = tic; 
 
@@ -29,9 +29,9 @@ timestart = tic;
 % ================================= Choose What to Plot and Save ===================================
 % ==================================================================================================
 save_dbar_output_as_mat_file = 0;
-display_images_to_screen = 1;
+display_images_to_screen = 0;
 save_images_as_jpg_files = 0;
-plot_movie = 0;
+plot_movie = 1;
 saved = 0;
 
 %===================================================================================================
@@ -40,7 +40,7 @@ saved = 0;
 % Directory where data is stored:
 datadir = 'ACT5_humanData/';
 
-% File name for .mat file containing EIT data.
+% File name of .mat file containing EIT data.
 datafname = 'Sbj001_93kHz_vent_24_10_15_10_51_57_1'; 
 
 % Directory for the program output to be saved to. If it doesn't exist, we'll create it later.
@@ -58,8 +58,8 @@ hz = 0.02;              % z-grid step size used to create the z grid (xx=-1:hz:1
 %======================================== Specify Reconstruction Parameters ========================
 %===================================================================================================
 refframe = 37; % Reference frame (e.g. at max expiration)
-startframe = 200;    
-endframe = 200;   
+startframe = 300;    
+endframe = 300;   
 
 % determine the total # of frames to reconstruct (we must ignore the reference frame when it's in the range (startframe,endframe))
 if refframe >= startframe & refframe <= endframe
@@ -81,15 +81,13 @@ all_frames(all_frames == refframe) = []; % remove refframe index from the list o
 
 gamma_best = 300;
 
-percent_to_truncate_colorbar = 10;
-
 cmap = 'jet';           % Select colormap for figures
 
-init_trunc = 4.1;       % Initial trunc. radius. Used to trunc scattering transform. Choose something smallish
-max_trunc = 4.6;        % Final max trunc. radius. Used to trunc scattering transform. Choose something bigger
+init_trunc = 4.7;       % Initial trunc. radius. Used to trunc scattering transform. Choose something smallish
+max_trunc = 4.7;        % Final max trunc. radius. Used to trunc scattering transform. Choose something bigger
+                      % note: smaller init_trunc, max_trunc ==> zoom in.
 
-ee = .05;               % Used to compute width of Gaussian window in FT. Smaller = more truncation
-
+ee = 0.08; % Used to compute width of Gaussian window in FT. Smaller = more truncation
 
 %===================================================================================================
 %======================== Load and Extract External Data & Physical Parameters =====================
@@ -101,11 +99,11 @@ load([datadir, datafname])
 %===================================================================================================
 %======================== Generate Reconstructions With the Dbar Algorithm =========================
 %===================================================================================================
-% START OF MAIN FOR-LOOP
+% START OF MAIN FOR-LOOP (the dbar algorithm)
 % Iterate over all frames in dataset (MINUS reference frames) and fill gamma_all with frame reconstructions. 
 for frame = all_frames
-    
-    
+
+
     % Voltages (use these to derive DN map)
     Vmulti = real(frame_voltage);   % Voltages for all frames in .mat file
     V = Vmulti(:,:,frame);          % Target frame voltage matrix. Selecting the measured voltage at 'frame' index
@@ -211,7 +209,7 @@ for frame = all_frames
     % Construct computational grid with M x M elements & complex variable k
     % We will need to eliminate the k-values outside the truncation radius and
     % within a small radius around k=0, but we will need to keep the original
-    % k-grid for some computations.
+    % k-grid for some comutations.
     %..........................................................................
     x = -s:h:s;
     [K1, K2] = meshgrid(x,x);
@@ -244,18 +242,10 @@ for frame = all_frames
     fft_beta  = fftn(beta(p,p)+beta(p1,p1)+beta(p1,p)+beta(p,p1))/4;
     
     %======================= Construct Current Matrix J =======================
-    % J = J0(:,1:numCP); 
-    % for kk = 1:numCP
-    %  J = J/norm(J(:,kk),2);
-    % end
-    
-    
-    
-    CurrAmp = max(max(J));
-    
-    % Now normalize columns of J with respect to the L2 norm.
-    J = J * sqrt(2/L)/CurrAmp;
-    J(:,L/2) = J(:,L/2) * sqrt(1/2); % The L/2 col. gets different treatment
+    J = J0(:,1:numCP); 
+    for kk = 1:numCP
+     J = J/norm(J(:,kk),2);
+    end
     
     %============= Precompute some values necessary for Dbar eqn ==============
     
@@ -324,6 +314,7 @@ for frame = all_frames
         Lhat = [Lhat1, Lhat2; Lhat3, Lhat4];
         
         dLambda = Lhat - refLhat; % transformed DN map, size numCP x numCP 
+        % dLambda = -(Lhat - refLhat); % transformed DN map, size numCP x numCP 
         %dLambda = Lambda - refLambda;
         
         %==================Compute approx. scattering transform================
@@ -350,48 +341,32 @@ for frame = all_frames
         end
         texp(kidx_max)=sumjk+sqrt(2)*(sumk+sumj)+2*akbar_L2.*ak_L2.*dLambda(L2,L2);
         
-        % Implement nonuniform truncation of scattering data. this is where
-        % trunc is happening in og way.
+        % Implement nonuniform truncation of scattering data
         max_real_texp = max(real(texp(kidx_init)));
         max_imag_texp = max(imag(texp(kidx_init)));
+        min_real_texp = min(real(texp(kidx_init)));
+        min_imag_texp = min(imag(texp(kidx_init)));
     
+        imagtexp = imag(texp); 
+        realtexp = real(texp); 
+        realtexp( realtexp>max_real_texp | realtexp<min_real_texp ) = 0; 
+        imagtexp( imagtexp>max_imag_texp | imagtexp<min_imag_texp ) = 0; 
     
+        texp= realtexp + 1i * imagtexp; 
     
-    
-        % texp( abs(real(texp)) > max_real_texp | abs(imag(texp)) > max_imag_texp ) = 0;
-        
-        % texp = texp * rmax* dtheta / (eArea); % JM ADDED THE FACTOR RMAX HERE - SEE LINE (5.18) OF ETHAN'S THESIS.  I think a FACTOR CurrAmp^2 does not need to go IN THE DENOMINATOR because our trig patterns do not include the current amplitude
-        % for plotting only
+        scaling_factor = rmax * dtheta / (eArea * gamma_best);
+        texp = texp * scaling_factor; 
         
         % Construct Gaussian window function adjusted to max_trunk
         a = -log(ee)/max_trunc^2;
         imaginary_k = imag(k);
         real_k = real(k);
         g_window = exp(-a*(real_k.^2 + imaginary_k.^2));
-        
-        tmat = reshape(texp,Mk,Mk);
-    
-        tmat_trunc = tmat.*g_window;
-    
-    
-    
-    
-        
-        min_real_texp = min(real(texp(kidx_init)));
-        min_imag_texp = min(imag(texp(kidx_init)));
-    
-        % imagtexp = imag(texp); 
-        % realtexp = real(texp); 
-        % realtexp( realtexp>max_real_texp | realtexp<min_real_texp ) = 0; 
-        % imagtexp( imagtexp>max_imag_texp | imagtexp<min_imag_texp ) = 0; 
-        % 
-        % texp= realtexp + 1i * imagtexp; 
-        % 
-        % scaling_factor = rmax * dtheta / (eArea * gamma_best);
-        % texp = texp * scaling_factor; 
-        % 
-        % 
-        % texpmat = reshape(texp,Mk,Mk);
+
+        texpmat = reshape(texp,Mk,Mk);
+
+        tmat_trunc = texpmat.*g_window;
+
         
         % figure
         % subplot(1,2,1)
@@ -410,12 +385,11 @@ for frame = all_frames
         
         
         % This is the pointwise multiplication operator used in the Dbar eqn.
-        TR = repmat(reshape(texp,Mk,Mk),[1,1,numz]) .* EXP;
+        TR = repmat(tmat_trunc,[1,1,numz]) .* EXP;
         
         %==========================Solve Dbar Equation=========================
         
         % Loop through all z values in domain
-        
         for ii = 1:numz
             T = TR(:,:,ii);
             m = rhs;   % Computation result, init guess is rhs
@@ -722,10 +696,6 @@ for frame = all_frames
     datarange = datamax-datamin;
     
     
-    colorbartrunc = percent_to_truncate_colorbar * .01;
-    datamin = datamin + colorbartrunc * datarange;
-    datamax = datamax - colorbartrunc * datarange;
-    
     
     % ==================================================================================================
     % ============================== Set Up the Output Directory and Filename for Each Frame ===========
@@ -753,7 +723,6 @@ for frame = all_frames
             colormap(cmap);
             
             % generate the pretty image reconstruction.
-            % imagesc(xx,xx,fliplr(squeeze(gamma_all(:,:,1))),[datamin, datamax]);
             imagesc(xx,xx,flipud(squeeze(gamma_all(:,:,1))),[datamin, datamax]);
             
             set(gca, 'Ydir', 'normal');
@@ -789,7 +758,7 @@ movie_outdir = 'Dbar_human_recons_movies';                 % directory for the .
 movie_outFname = ['short_Dbar_movie_', datafname];         % output filename for recon movie.
 movie_outstr = [movie_outdir, '/', movie_outFname];        % directory for the recon movie's corresponding .mat file. 
 
-% create the movie outdir if it doesn't exist...
+% create the movie outdir if it doesn't exist.
 if ~exist(movie_outdir, 'dir')
         mkdir(movie_outdir)
 end
@@ -807,8 +776,8 @@ open(writerObj);
 max_gamma_all = max(max(max(gamma_all)));
 min_gamma_all = min(min(min(gamma_all)));
 range_gamma = max_gamma_all - min_gamma_all;
-cmax_gamma = max_gamma_all - 0.1*range_gamma;
-cmin_gamma = min_gamma_all + 0.1*range_gamma;
+cmax_gamma = max_gamma_all - 0.01*range_gamma;
+cmin_gamma = min_gamma_all + 0.01*range_gamma;
 
 % initialize variable to keep track of the current frame # in the for-loop.
 frame_idx = 1; 
@@ -832,7 +801,6 @@ for frame_num = all_frames
     caxis([cmin_gamma,cmax_gamma])
     colorbar
     axis square
-    % set(gca,'XTick',[]); set(gca,'YTick',[])
     set(gca, 'Ydir', 'normal')
 
     title(['Frame number = ',num2str(frame_num)]); % add title to figure for reference frame number.
