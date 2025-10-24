@@ -41,7 +41,7 @@ saved = 0;
 datadir = 'ACT5_humanData/';
 
 % File name of .mat file containing EIT data.
-datafname = 'Sbj001_93kHz_vent_24_10_15_10_51_57_1'; 
+datafname = 'Sbj001_93kHz_perf_24_10_15_11_05_09_1'; 
 
 % Directory for the program output to be saved to. If it doesn't exist, we'll create it later.
 outdir = 'HumanRecons';
@@ -57,9 +57,9 @@ hz = 0.02;              % z-grid step size used to create the z grid (xx=-1:hz:1
 %===================================================================================================
 %======================================== Specify Reconstruction Parameters ========================
 %===================================================================================================
-refframe = 37; % Reference frame (e.g. at max expiration)
-startframe = 300;    
-endframe = 300;   
+refframe = 399; % Reference frame (e.g. at max expiration)
+startframe = 250;    
+endframe = 250; 
 
 % determine the total # of frames to reconstruct (we must ignore the reference frame when it's in the range (startframe,endframe))
 if refframe >= startframe & refframe <= endframe
@@ -83,11 +83,11 @@ gamma_best = 300;
 
 cmap = 'jet';           % Select colormap for figures
 
-init_trunc = 4.7;       % Initial trunc. radius. Used to trunc scattering transform. Choose something smallish
-max_trunc = 4.7;        % Final max trunc. radius. Used to trunc scattering transform. Choose something bigger
+init_trunc = 5;       % Initial trunc. radius. Used to trunc scattering transform. Choose something smallish
+max_trunc = 5;        % Final max trunc. radius. Used to trunc scattering transform. Choose something bigger
                       % note: smaller init_trunc, max_trunc ==> zoom in.
 
-ee = 0.08; % Used to compute width of Gaussian window in FT. Smaller = more truncation
+ee = 0.05; % Used to compute width of Gaussian window in FT. Smaller = more truncation
 
 %===================================================================================================
 %======================== Load and Extract External Data & Physical Parameters =====================
@@ -317,19 +317,20 @@ for frame = all_frames
         % dLambda = -(Lhat - refLhat); % transformed DN map, size numCP x numCP 
         %dLambda = Lambda - refLambda;
         
-        %==================Compute approx. scattering transform================
+
+        %================== Compute approx. scattering transform ================
         
-        texp = zeros(numk,1);
+        texp = zeros(numk,1); % initialize an empty matrix for the approximate scattering transform.
         
         L2=Ldiv2;
-        ak_L2=((1i*ktrunc_max).^L2)/factorial(L2);
-        akbar_L2=((1i*conjktrunc_max).^L2)/factorial(L2);
-        sumjk=zeros(size((1i*conjktrunc_max)));
-        sumk=zeros(size((1i*conjktrunc_max)));
-        sumj=zeros(size((1i*conjktrunc_max)));
+        ak_L2 = ((1i*ktrunc_max).^L2)/factorial(L2);
+        akbar_L2 = ((1i*conjktrunc_max).^L2)/factorial(L2);
+        sumjk = zeros(size((1i*conjktrunc_max)));
+        sumk = zeros(size((1i*conjktrunc_max)));
+        sumj = zeros(size((1i*conjktrunc_max)));
         
-        % Compute sums from Jutta's paper and Ethan's work
-        % looping over indices to compute sums from dlambda
+        % Compute the approximate scattering transform, texp, by looping over indices to compute sums from dlambda.
+        % This is taken from Jutta's paper and Ethan's work
         for j=1:L2-1
             akbar_j=((1i*conjktrunc_max).^j)/factorial(j);
             sumj=sumj+ak_L2.*akbar_j.*(dLambda(j,L2)+dLambda(L2+j,L2));
@@ -356,34 +357,34 @@ for frame = all_frames
     
         scaling_factor = rmax * dtheta / (eArea * gamma_best);
         texp = texp * scaling_factor; 
-        
-        % Construct Gaussian window function adjusted to max_trunk
+
+
+        % Construct Gaussian window function.
+        % ee and max_trunc vals adjust the "tightness" of the Gaussian curve. 
         a = -log(ee)/max_trunc^2;
         imaginary_k = imag(k);
         real_k = real(k);
         g_window = exp(-a*(real_k.^2 + imaginary_k.^2));
 
-        texpmat = reshape(texp,Mk,Mk);
+        texpmat = reshape(texp,Mk,Mk); % reshape texp: 1D vector --> 3D matrix.
 
+        % visualize texp before applying the Gaussian truncation.
+        figure;
+        subplot(1,2,1)
+        surf(real(texpmat));
+        title("Before Gaussian truncation")
+        axis square;
+
+        % apply Gaussian truncation. 
         tmat_trunc = texpmat.*g_window;
-
         
-        % figure
-        % subplot(1,2,1)
-        % imagesc(real(texpmat))
-        % colormap jet
-        % title('Real texp');
-        % colorbar;
-        % axis square;
-        
-        % subplot(1,2,2)
-        % imagesc(imag(texpmat))
-        % colormap jet
-        % title('Imag texp');
-        % colorbar;
-        % axis square;
-        
-        
+        % visualize texp after applying the Gaussian truncation.
+        % figure;
+        subplot(1,2,2)
+        surf(real(tmat_trunc));
+        title("After Gaussian truncation");
+        axis square;
+       
         % This is the pointwise multiplication operator used in the Dbar eqn.
         TR = repmat(tmat_trunc,[1,1,numz]) .* EXP;
         
@@ -776,8 +777,11 @@ open(writerObj);
 max_gamma_all = max(max(max(gamma_all)));
 min_gamma_all = min(min(min(gamma_all)));
 range_gamma = max_gamma_all - min_gamma_all;
-cmax_gamma = max_gamma_all - 0.01*range_gamma;
-cmin_gamma = min_gamma_all + 0.01*range_gamma;
+% cmax_gamma = max_gamma_all - 0.01*range_gamma;
+cmax_gamma = max_gamma_all;
+% cmin_gamma = min_gamma_all + 0.01*range_gamma;
+cmin_gamma = min_gamma_all;
+
 
 % initialize variable to keep track of the current frame # in the for-loop.
 frame_idx = 1; 
