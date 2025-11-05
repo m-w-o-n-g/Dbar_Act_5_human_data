@@ -29,7 +29,7 @@ timestart = tic;
 % ================================= Choose What to Plot and Save ===================================
 % ==================================================================================================
 save_dbar_output_as_mat_file = 0;
-display_images_to_screen = 1;
+display_images_to_screen = 0;
 save_images_as_jpg_files = 0;
 plot_movie = 0;
 saved = 1;
@@ -41,7 +41,7 @@ saved = 1;
 datadir = 'ACT5_humanData/';
 
 % File name for .mat file containing EIT data.
-datafname = 'modified_16x16_Sbj02_2D_16e_24_10_16_12_39_39_93750'; 
+datafname = 'Sbj001_35kHz_perf_24_10_15_10_59_17_2'; 
 
 % Directory for the program output to be saved to. If it doesn't exist, we'll create it later.
 % outdir = 'Dbar_human_recons_movies';
@@ -52,9 +52,9 @@ outdir = 'HumanRecons';
 %======================================== Specify Reconstruction Parameters ========================
 %===================================================================================================
 % targframe = 10;    % Frame we will reconstruct (target)
-refframe = 513;      % Reference frame (e.g. at max expiration)
-startframe = 665;    % 1200 was pretty good, 300, 1400 was best so far, 1350 was really good. def also include 750. 
-endframe = 670;   
+refframe = 45;      % Reference frame (e.g. at max expiration)
+startframe = 153;    % 1200 was pretty good, 300, 1400 was best so far, 1350 was really good. def also include 750. 
+endframe = 500;   
 
 % determine the total # of frames to reconstruct (we must ignore the reference frame when it's in the range (startframe,endframe))
 if refframe >= startframe & refframe <= endframe
@@ -83,11 +83,16 @@ cmap = 'jet';
 % ==================================================================================================
 % ================================ Specify Mesh Size Parameters  ===================================
 % ==================================================================================================
-Mk = 32;                % Size of k-grid is Mk x Mk
-hz = 0.02;              % z-grid step size used to create the z grid (xx=-1:hz:1). Smaller value => finer mesh.
+Mk = 16;                % Size of k-grid is Mk x Mk
+hz = 0.02; 
+xx = -1:hz:1;
+N = numel(xx);
+gamma
 
-init_trunc = 4.0;       % Initial trunc. radius. Used to trunc scattering transform. Choose something smallish
-max_trunc = 4.5;        % Final max trunc. radius. Used to trunc scattering transform. Choose something bigger
+% z-grid step size used to create the z grid (xx=-1:hz:1). Smaller value => finer mesh.
+
+init_trunc = 3.6;       % Initial trunc. radius. Used to trunc scattering transform. Choose something smallish
+max_trunc = 4.2;        % Final max trunc. radius. Used to trunc scattering transform. Choose something bigger
 
 
 %===================================================================================================
@@ -316,7 +321,7 @@ for jj = 1:num_frames
     Lhat4 = (A2-1i*B2)*Lambda(Ldiv2+1:numCP,Ldiv2+1:numCP)*(C2.'+1i*D2.');
     Lhat = [Lhat1, Lhat2; Lhat3, Lhat4];
     
-    dLambda = Lhat - refLhat; % transformed DN map, size numCP x numCP 
+    dLambda = -(Lhat - refLhat); % transformed DN map, size numCP x numCP 
     %dLambda = Lambda - refLambda;
     
     %==================Compute approx. scattering transform================
