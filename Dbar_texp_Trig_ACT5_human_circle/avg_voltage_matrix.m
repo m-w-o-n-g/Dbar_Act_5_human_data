@@ -57,16 +57,17 @@ hz = 0.02;              % z-grid step size used to create the z grid (xx=-1:hz:1
 %===================================================================================================
 %======================================== Specify Reconstruction Parameters ========================
 %===================================================================================================
-refframe = 2435; % Reference frame (e.g. at max expiration)
+% refframe = 2435; % Reference frame (e.g. at max expiration)
 startframe = 2370;    
 endframe = 2843;   
 
 % determine the total # of frames to reconstruct (we must ignore the reference frame when it's in the range (startframe,endframe))
-if refframe >= startframe & refframe <= endframe
-    total_reconstruct_frames = endframe - startframe;
-else
-    total_reconstruct_frames = endframe - startframe + 1;
-end
+% if refframe >= startframe & refframe <= endframe
+%     total_reconstruct_frames = endframe - startframe;
+% else
+%     total_reconstruct_frames = endframe - startframe + 1;
+% end
+total_reconstruct_frames = endframe - startframe + 1;
 
 % initialize gamma_all for storing all frame reconstructions. 
 xx = -1:hz:1;
@@ -101,12 +102,12 @@ load([datadir, datafname])
 % Iterate over all frames in dataset (MINUS reference frames) and fill gamma_all with frame reconstructions. 
 for frame = all_frames
 
-
     % Voltages (use these to derive DN map)
-    Vmulti = real(frame_voltage);   % Voltages for all frames in .mat file
-    V = Vmulti(:,:,frame);          % Target frame voltage matrix. Selecting the measured voltage at 'frame' index
-    Vref = Vmulti(:,:,refframe);    % Reference frame voltage matrix
-    
+    Vmulti = real(frame_voltage);                  % Voltages for all frames in .mat file. frame_voltage is a 3D matrix: row x column x num_frames
+    Vmulti_perf = Vmulti(:,:,startframe:endframe); % Voltages for just the perf chunk of the .mat file. Each slice of Vmulti (Vmulti(:,:,k)) is a full set of measured voltages for frame k.
+    V = Vmulti(:,:,frame);                         % Target frame voltage matrix. Selecting the measured voltage at 'frame' index.
+    Vref = mean(Vmulti_perf, 3);                   % Reference frame voltage matrix. Found by taking an avg of the 3 entry of the 
+
     % Current pattern matrix (unnormalized and including all columns) (use these to derive DN map)
     J0 = cur_pattern; 
     
@@ -743,7 +744,7 @@ end % END MAIN FOR-LOOP ==> gamma_all has been completely filled with 'total_fra
 % ==================================================================================================
 % set up movie output directories.
 movie_outdir = 'Dbar_human_recons_movies';                 % directory for the .avi recon movie file.
-movie_outFname = ['short_Dbar_movie_perf_', datafname];         % output filename for recon movie.
+movie_outFname = ['short_Dbar_movie_perf_avg_refframe', datafname];         % output filename for recon movie.
 movie_outstr = [movie_outdir, '/', movie_outFname];        % directory for the recon movie's corresponding .mat file. 
 
 % create the movie outdir if it doesn't exist.

@@ -83,11 +83,11 @@ gamma_best = 300;
 
 cmap = 'jet';           % Select colormap for figures
 
-init_trunc = 5;       % Initial trunc. radius. Used to trunc scattering transform. Choose something smallish
-max_trunc = 5;        % Final max trunc. radius. Used to trunc scattering transform. Choose something bigger
+init_trunc = 4.2;       % Initial trunc. radius. Used to trunc scattering transform. Choose something smallish
+max_trunc = 4.2;        % Final max trunc. radius. Used to trunc scattering transform. Choose something bigger
                       % note: smaller init_trunc, max_trunc ==> zoom in.
 
-ee = 0.05; % Used to compute width of Gaussian window in FT. Smaller = more truncation
+ee = 0.1; % Used to compute width of Gaussian window in FT. Smaller = more truncation
 
 %===================================================================================================
 %======================== Load and Extract External Data & Physical Parameters =====================
@@ -461,7 +461,7 @@ for frame = all_frames
                 w = [real(f); imag(f)];
                 %------------------------------------------------------------------
                 
-                if kk == 1  % This will be the only kk value in many cases.
+                if kk == 1  % This will be the only kk value in many cases.                    
                     H(1,1) = w'*Vee(:,1);
                     w = w - H(1,1)*Vee(:,1);
                     H(2,1) = norm(w);
@@ -525,6 +525,8 @@ for frame = all_frames
                     H(kk,kk) = cs(kk)*H(kk,kk) + sn(kk)*H(kk+1,kk);
                     H(kk+1,kk) = 0.0;
                     error  = abs(ess(kk+1)) / bnrm2;
+                    
+                    disp("HELLO")
                     if ( error <= tol )                        % update approximation
                         Y = H(1:kk,1:kk) \ ess(1:kk);           % and exit
                         m = m + Vee(:,1:kk)*Y;
@@ -774,13 +776,13 @@ set(writerObj,'FrameRate',5);
 open(writerObj);
 
 % Standardizing the colorbar for the image reconstruction.
-max_gamma_all = max(max(max(gamma_all)));
-min_gamma_all = min(min(min(gamma_all)));
-range_gamma = max_gamma_all - min_gamma_all;
-% cmax_gamma = max_gamma_all - 0.01*range_gamma;
-cmax_gamma = max_gamma_all;
-% cmin_gamma = min_gamma_all + 0.01*range_gamma;
-cmin_gamma = min_gamma_all;
+% max_gamma_all = max(max(max(gamma_all)));
+% min_gamma_all = min(min(min(gamma_all)));
+% range_gamma = max_gamma_all - min_gamma_all;
+% % cmax_gamma = max_gamma_all - 0.01*range_gamma;
+% cmax_gamma = max_gamma_all;
+% % cmin_gamma = min_gamma_all + 0.01*range_gamma;
+% cmin_gamma = min_gamma_all;
 
 
 % initialize variable to keep track of the current frame # in the for-loop.
@@ -802,7 +804,7 @@ for frame_num = all_frames
     % generate the pretty image reconstruction.
     imagesc(flipud(gamma_all(:,:,frame_idx)))
     
-    caxis([cmin_gamma,cmax_gamma])
+    % caxis([cmin_gamma,cmax_gamma])
     colorbar
     axis square
     set(gca, 'Ydir', 'normal')
