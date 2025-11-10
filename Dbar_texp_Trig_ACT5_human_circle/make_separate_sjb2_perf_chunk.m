@@ -1,0 +1,25 @@
+clear all
+
+% Directory where data is stored:
+datadir = 'ACT5_humanData/';
+
+% File name for .mat file containing EIT data 
+datafname = 'modified_16x16_Sbj02_2D_16e_24_10_16_12_38_03_93750';  
+
+load([datadir, datafname]);
+
+start_frame = 2370;
+end_frame = 2790; % choosing to exclude frames 2791-2843 because those seem to be throwing off colorbar for movie reconstructions. 
+
+% update variables that rely on frame number.
+EOF_data = EOF_data(:,start_frame:end_frame);
+cali_temperature = cali_temperature(:,start_frame:end_frame);
+corrected_frame_current = corrected_frame_current(:,start_frame:end_frame);
+frame_ECG = frame_ECG(:,:,start_frame:end_frame);
+frame_current = frame_current(:,start_frame:end_frame);
+frame_voltage = frame_voltage(:,:,start_frame:end_frame);
+meas_imp_C = meas_imp_C(:,start_frame:end_frame);
+meas_imp_R = meas_imp_R(:,start_frame:end_frame);
+
+
+save([datadir,'perf_chunk_',datafname])

@@ -41,7 +41,8 @@ saved = 1;
 datadir = 'ACT5_humanData/';
 
 % File name of .mat file containing EIT data.
-datafname = 'modified_16x16_Sbj02_2D_16e_24_10_16_12_38_03_93750'; 
+% datafname = 'modified_16x16_Sbj02_2D_16e_24_10_16_12_38_03_93750';
+datafname = 'perf_chunk_Sbj02_2D_16e_24_10_16_12_38_03_93750';
 
 % Directory for the program output to be saved to. If it doesn't exist, we'll create it later.
 outdir = 'HumanRecons';
@@ -50,16 +51,16 @@ outdir = 'HumanRecons';
 % ==================================================================================================
 % ================================ Specify Mesh Size Parameters  ===================================
 % ==================================================================================================
-Mk = 32;                % Size of k-grid is Mk x Mk
-hz = 0.02;              % z-grid step size used to create the z grid (xx=-1:hz:1). Smaller value => finer mesh.
+Mk = 16;                % Size of k-grid is Mk x Mk
+hz = 0.07;              % z-grid step size used to create the z grid (xx=-1:hz:1). Smaller value => finer mesh.
 
 
 %===================================================================================================
 %======================================== Specify Reconstruction Parameters ========================
 %===================================================================================================
-refframe = 2435; % Reference frame (e.g. at max expiration)
-startframe = 2370;    
-endframe = 2843;   
+refframe = 65; % Reference frame (e.g. at max expiration)
+startframe = 51;    
+endframe = 421;   %full dataset has 421 frames.
 
 % determine the total # of frames to reconstruct (we must ignore the reference frame when it's in the range (startframe,endframe))
 if refframe >= startframe & refframe <= endframe
@@ -83,8 +84,8 @@ gamma_best = 300;
 
 cmap = 'jet';           % Select colormap for figures
 
-init_trunc = 3.4;       % Initial trunc. radius. Used to trunc scattering transform. Choose something smallish
-max_trunc = 4;        % Final max trunc. radius. Used to trunc scattering transform. Choose something bigger
+init_trunc = 4;       % Initial trunc. radius. Used to trunc scattering transform. Choose something smallish
+max_trunc = 4.4;        % Final max trunc. radius. Used to trunc scattering transform. Choose something bigger
 
 
 %===================================================================================================
@@ -743,7 +744,7 @@ end % END MAIN FOR-LOOP ==> gamma_all has been completely filled with 'total_fra
 % ==================================================================================================
 % set up movie output directories.
 movie_outdir = 'Dbar_human_recons_movies';                 % directory for the .avi recon movie file.
-movie_outFname = ['short_Dbar_movie_perf_', datafname];         % output filename for recon movie.
+movie_outFname = ['TESTING7_0.2cb_short_Dbar_movie_perf_refframe65_', datafname];         % output filename for recon movie.
 movie_outstr = [movie_outdir, '/', movie_outFname];        % directory for the recon movie's corresponding .mat file. 
 
 % create the movie outdir if it doesn't exist.
@@ -764,8 +765,8 @@ open(writerObj);
 max_gamma_all = max(max(max(gamma_all)));
 min_gamma_all = min(min(min(gamma_all)));
 range_gamma = max_gamma_all - min_gamma_all;
-cmax_gamma = max_gamma_all - 0.1*range_gamma;
-cmin_gamma = min_gamma_all + 0.1*range_gamma;
+cmax_gamma = max_gamma_all - 0.2*range_gamma;
+cmin_gamma = min_gamma_all + 0.2*range_gamma;
 
 % initialize variable to keep track of the current frame # in the for-loop.
 frame_idx = 1; 

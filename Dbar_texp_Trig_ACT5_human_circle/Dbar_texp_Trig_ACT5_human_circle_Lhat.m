@@ -39,12 +39,12 @@ save_images_as_jpg_files = 0;
 datadir = 'ACT5_humanData/';
 
 % File name for .mat file containing EIT data 
-datafname = 'modified_16x16_Sbj02_2D_16e_24_10_16_12_39_39_93750';  
+datafname = 'perf_chunk_Sbj02_2D_16e_24_10_16_12_38_03_93750';  
 
 % targframe = 10;  % Frame we will reconstruct (target)
 refframe = 10;   % Reference frame (e.g. at max expiration)
 startframe = 11;
-endframe = 2843;
+endframe = 421;
 highest_cond = 0; 
 best_frame = 0;
 
