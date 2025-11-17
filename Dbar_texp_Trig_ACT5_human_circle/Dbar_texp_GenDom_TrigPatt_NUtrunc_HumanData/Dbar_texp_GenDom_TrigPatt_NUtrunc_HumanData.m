@@ -1,165 +1,137 @@
-%===================================================================================================
-% This script runs the D-bar algorithm, calling the necessary functions to compute the approximate
-% scattering transform texp and solve the Dbar equation.
-% This is for ACT5 DATA using TRIG PATTERNS on a CIRCULAR DOMAIN. This code is set up to reconstruct
-% human data as difference images, by selecting one reference frame from a multiframe dataset. 
 
-% Note: this uses the transformed DN map, so general domain functionality could
-% be implemented by importing electrode positions from a boundary file, but this is not currently
-% done in this code. 
-% 
-% Note: this code currently reconstructs a single image, using averages of both measured and
-% reference voltages. A loop over multiple frames exists, however, so it could be easily modified to
-% reconstruct multiple frames.
+%==========================================================================
+% This script runs the Dbar algorithm, calling the necessary functions to
+% compute the approx scattering transform texp and solve the Dbar equation.
+% This is for HUMAN DATA using TRIG PATTERNS on a GENERAL DOMAIN.
 %
-% Note: this code is a little messy and could be cleaned up some, but it does seem to work fine
-
 % Authors:                  Melody Alsaker, Jennifer Mueller, Peter Muller
-% Date Modified:            September 2024
+% Date Modified:            April 2019
 %
-%===================================================================================================
+% Edits made in 2025
+% Author: Sean Cowan
+% Edits: Added Gaussian truncation and removed intial truncation
+% Made code ready for ACT5 Human Data
+%
+%==========================================================================
 
-% clear 
-% close all
-timeStampstr = strrep(strrep(datestr(now,0),' ', '-'), ':', '-');  % Create timestamp string
-timestart = tic; 
+clear all
+close all
 
+timestart = tic;
+total_runtime = 0;
 
-% ==================================================================================================
-% ================================= Choose What to Plot and Save ===================================
-% ==================================================================================================
+%**************************************************************************
+%===================== Set up Dataset-Specific Info =======================
+% ATTN USER: Make necessary changes to all the parameters in this section.
+% Only values within this section need to be modified between datasets.
+%==========================================================================
+
+%--------------------------------------------------------------------------
+% USER: What would you like to do? Set each of the following flags.
+% For each of these, yes = 1, no = 0.
+%--------------------------------------------------------------------------
 save_dbar_output_as_mat_file = 0;
 display_images_to_screen = 1;
-save_images_as_jpg_files = 0;
-plot_movie = 0;
-saved = 0;
-
-%===================================================================================================
-%======================================== Specify External Data ====================================
-%===================================================================================================
-% Directory where data is stored:
-datadir = 'ACT5_humanData/';
-
-% File name for .mat file containing EIT data.
-datafname = 'Sbj001_93kHz_vent_24_10_15_10_51_57_1'; 
-
-% Directory for the program output to be saved to. If it doesn't exist, we'll create it later.
-% outdir = 'Dbar_human_recons_movies';
-outdir = 'HumanRecons';
+save_images_as_jpg_files =1;
 
 
-%===================================================================================================
-%======================================== Specify Reconstruction Parameters ========================
-%===================================================================================================
-% targframe = 10;    % Frame we will reconstruct (target)
-refframe = 37;      % Reference frame (e.g. at max expiration)
-startframe = 96;    % 1200 was pretty good, 300, 1400 was best so far, 1350 was really good. def also include 750. 
-endframe = 96;   
+%--------------------------------------------------------------------------
+% USER: Provide directories and boundary info.
+% All directory names must end in a file separator character (forward-slash
+% or back-slash, depending on operating system).
+%--------------------------------------------------------------------------
 
-% determine the total # of frames to reconstruct (we must ignore the reference frame when it's in the range (startframe,endframe))
-if refframe >= startframe & refframe <= endframe
-    total_reconstruct_frames = endframe - startframe;
-else
-    total_reconstruct_frames = endframe - startframe + 1;
-end
 
-% initialize gamma_all for storing all frame reconstructions. 
-gamma_all = zeros(101, 101, total_reconstruct_frames);
+% Set file names and directories
+data_dir = 'ACT5_humanData/';
+data_fname = 'Sbj001_93kHz_vent_24_10_15_10_51_57_1';
+trg_frame = 96;
+ref_frame = 37;
+L = 32;                  % Number of electrodes
 
-% set the main for-loop indexing variable to 1.
-frame_idx = 1;
-  
-% "grab" all frames in the dataset (MINUS the reference frame).
-all_frames = startframe:endframe;
-all_frames(all_frames == refframe) = [];          % remove refframe index from the list of frames (that we'll iterate over).
-% disp(all_frames)
 
-gamma_best = 300;
+% Load the target voltage data -- i.e. the thing we want to reconstruct
+load([data_dir, data_fname]);
+V_total = frame_voltage;
+
+
+V = V_total(:,:,trg_frame);
+V(:,L)=[];
+J = cur_pattern;
+J(:,L)=[];
+total_num_frames = 1;
+
+% Load homogenous data
+Vref = V_total(:,:,ref_frame);
+Vref(:,L)=[];
+
+
+% Directory where program output will be saved
+output_directory = [];
+
+% File containing list of bdry pts and the directory where it is stored
+bdry_file = 'EllipseBdry_0p8_952p6mm.txt';
+bdry_directory = [];
+
+
+%--------------------------------------------------------------------------
+% USER: Enter values for all of the following.
+%--------------------------------------------------------------------------
+Perim_inches = 40;            % Perimeter of boundary (inches).
+Perim = Perim_inches * 0.0254;  % Perimeter of boundary (meters).
+
+M = 32;                  % Size of k-grid for Fourier domain is MxM. Enter a power of 2.
+% M=16 is nice and fast, M=32 is more accurate, M=64 is super great but slowish
+
+hh = 0.015;               % Spatial z-grid step size. This changes the number
+% of pixels in your reconstruction.  Smaller value => finer mesh.
+% Choose 0.01 <= hh <= 0.065 for best results.
+
+ee = 0.05; % Used to compute width of Gaussian window in FT. Smaller = more truncation
+
+% Specify a circular truncation region for the low-pass Fourier domain filter
+max_trunc = 3.5;         % Final max trunc. radius. Choose something bigger
+
+% Truncates colorbar for display purposes. Enter an integer from 0 to 10.
+% If displaying a small number of images, choose something smaller.
+percent_to_truncate_colorbar = 0;
 
 % Select colormap for figures
 cmap = 'jet';
 
 
-% ==================================================================================================
-% ================================ Specify Mesh Size Parameters  ===================================
-% ==================================================================================================
-Mk = 16;                % Size of k-grid is Mk x Mk
-hz = 0.02; 
-xx = -1:hz:1;
-N = numel(xx);
+
+%================= END Set up Dataset-Specific Info =======================
 
 
-% z-grid step size used to create the z grid (xx=-1:hz:1). Smaller value => finer mesh.
-
-init_trunc = 3.6;       % Initial trunc. radius. Used to trunc scattering transform. Choose something smallish
-max_trunc = 4.2;        % Final max trunc. radius. Used to trunc scattering transform. Choose something bigger
+% Load bdry pts. Odd-indixed pts are electrode ctrs
+coords = load([bdry_directory, bdry_file], '-ascii');
 
 
-%===================================================================================================
-%======================== Load and Extract External Data & Physical Parameters =====================
-%===================================================================================================
-% Load measured data. We will pull various physical parameters from this.  
-load([datadir, datafname])
+%figure
+%plot(coords(:,1),coords(:,2),'*')  % Plots the boundary
+%axis square
+%title('Original boundary shape')
 
-
-%===================================================================================================
-%======================== Generate Reconstructions With the Dbar Algorithm =========================
-%===================================================================================================
-% START OF MAIN FOR-LOOP
-% Iterate over all frames in dataset (MINUS reference frames) and fill gamma_all with frame reconstructions. 
-for frame = all_frames
-
-
-% Voltages (use these to derive DN map)
-Vmulti = real(frame_voltage);   % Voltages for all frames in .mat file
-V = Vmulti(:,:,frame);          % Target frame voltage matrix. Selecting the measured voltage at 'frame' index
-Vref = Vmulti(:,:,refframe);    % Reference frame voltage matrix
-
-% Current pattern matrix (unnormalized and including all columns) (use these to derive DN map)
-J0 = cur_pattern; 
-
-L = length(J0);    % Number of electrodes
-numCP = L-1;       % Number of linearly independent current patterns
-
-% L = 32;
-% dtheta = 2*pi/L;
-% theta = (dtheta:dtheta:2*pi)';
-% currents = zeros(L,L-1);
-% for j = 1:(L/2)
-%    currents(:,j) = cos(j*theta);
-% end
-% for j = 1:(L/2)
-%    currents(:,L/2+j) = sin(j*theta);
-% end
-% J0 = currents * current_amp;
-
-% Format of J0: Each column corresponds to a current pattern, as follows
-% curr_amp * [ cos(theta), cos(2*theta), ... ,cos(16*theta), sin(theta), sin(2*theta), ..., sin(16*theta) ]; 
-
-% extract electrode geometry params from the loaded .mat file to create circular domain.
-eheight = elec_height; ewidth = elec_width;     % Electrode height, width (in meters)
-perim = circumference * 0.0254;                 % Domain perimeter in meters (the variable circumference is loaded in inches)
-dtheta = 2*pi/L;                                % We assume equal electrode spacing
-etheta = dtheta:dtheta:2*pi;                    % Angular positions of electrode centers
-eArea = eheight * ewidth;                       % Simple area of electrode (meters^2)
-
-x_bdry = cos(etheta)'; y_bdry = sin(etheta)'; 
-
+numCP = L - 1;                  % Num. of lin. indep. C.P.s
 
 %========================Set up numerical parameters=======================
 
 % Grid and computational parameters
-s = max_trunc;          % trunc radius (to be used in k-grid)
-h = 2*s/(Mk-1);         % k-grid step size
+s = max_trunc;
+h = 2*s/(M-1);         % k-grid step size
 
-Mdiv2 = Mk/2;
-Mtimes2 = 2*Mk;
+Mdiv2 = M/2;
+Mtimes2 = 2*M;
+
+eheight = 0.0254; ewidth = 0.0254;      % Electrode height, width (meters)
+eArea = ewidth * eheight;              % Area of electrode (meters^2)
+dtheta = 2*pi/L;                % We assume equal electrode spacing.
+
 
 %================ Set up Boundary Data and Arclength function==============
 
-% store position of electrodes as Lx2 matrix.
-coords = zeros(L,2);        
-coords(:,1) = x_bdry;  coords(:,2) = y_bdry;
+x_bdry = coords(:,1); y_bdry = coords(:,2);
 
 % Get polygon data: geom = [ area   X_cen  Y_cen  perimeter ]
 [geom,~,~] = polygeom(x_bdry,y_bdry);
@@ -168,31 +140,35 @@ coords(:,1) = x_bdry;  coords(:,2) = y_bdry;
 x_bdry = x_bdry - geom(2); y_bdry = y_bdry - geom(3);
 
 % Scale to match physical parameters
-domScaleFactor = perim / geom(4);
+ScaleFactor = Perim / geom(4);
 
-%x_bdry = x_bdry * domScaleFactor; y_bdry = y_bdry * domScaleFactor;
+x_bdry = x_bdry * ScaleFactor; y_bdry = y_bdry * ScaleFactor;
+figure
+plot(x_bdry,y_bdry,'*')  % Plots the boundary
+axis square
+title('Scaled boundary shape')
 
-%figure
-%plot(x_bdry,y_bdry,'*')  % Plots the boundary
-%axis square
-%title('Scaled boundary shape')
-
-[~,bdry_r] = cart2pol(x_bdry,y_bdry);
+[bdry_theta,bdry_r] = cart2pol(x_bdry,y_bdry);
 bdry_rmax = max(bdry_r);
 
 % Rotate the boundary so that e1 is at the angular position 0 + dtheta.
-% rot_angle = 0;  
-% Rmat = [cos(rot_angle), -sin(rot_angle); sin(rot_angle), cos(rot_angle)];
-% rot_coords = Rmat*[x_bdry'; y_bdry'];
-% x_bdry = rot_coords(1,:)'; y_bdry = rot_coords(2,:)';
+rot_angle = 0;  
+Rmat = [cos(rot_angle), -sin(rot_angle); sin(rot_angle), cos(rot_angle)];
+rot_coords = Rmat*[x_bdry'; y_bdry'];
+x_bdry = rot_coords(1,:)'; y_bdry = rot_coords(2,:)';
 %figure
 %plot(x_bdry,y_bdry,'o')  % Plots the boundary
 %axis square
 %title('Scaled and rotated boundary shape')
 
-Ldiv2 = floor(L/2);  % half hte number of electrodes. Note if L is odd, this means more sines than cosines
+% Angles corresponding to electrode centers
+etheta = dtheta:dtheta:2*pi;  % assume equal angular spacing
 
-[A1,A2,B1,B2,C1,C2,D1,D2,theta,r_th,a,M_pts,rmax]=Fourier_coefficients_gen_MODIFIED(coords,perim,L,Ldiv2);
+
+
+Ldiv2 = floor(L/2);  % Note if L is odd, this means more sines than cosines
+
+[A1,A2,B1,B2,C1,C2,D1,D2,theta,r_th,a,M_pts,rmax]=Fourier_coefficients_gen(bdry_directory,bdry_file,Perim,L,Ldiv2);
 
 
 %======================Set up computational grids==========================
@@ -201,17 +177,20 @@ Ldiv2 = floor(L/2);  % half hte number of electrodes. Note if L is odd, this mea
 % Construct mesh of z-values representing physical domain. We can throw out
 % z-values outside the domain; these will not be needed in the computation.
 %..........................................................................
-xx = -1:hz:1;
+xx = -1:hh:1;
 N = numel(xx);
 [z1,z2] = meshgrid(xx,xx);
 
+
+x_bdry = x_bdry / bdry_rmax;
+y_bdry = y_bdry / bdry_rmax;
 z = z1 + 1i*z2;
-z = reshape(z,N*N,1);                       % Set of z-vals is now a vector
-[IN, ON]=inpolygon(z1,z2,x_bdry,y_bdry);    % Find indices of z-vals in domain
-zidx = find(IN + ON);                       % Indices of z-vals in domain
-z = z(zidx);                                % Get rid of z-vals outside domain
-numz = numel(zidx);                         % Number of in-domain z-vals
-conjz = conj(z);                            % Complex conj of in-domain z-vals
+z = reshape(z,N*N,1);                   % Set of z-vals is now a vector
+[IN, ON]=inpolygon(z1,z2,x_bdry,y_bdry); % Find indices of z-vals in domain
+zidx = find(IN + ON);                   % Indices of z-vals in domain
+z = z(zidx);                            % Get rid of z-vals outside domain
+numz = numel(zidx);                     % Number of in-domain z-vals
+conjz = conj(z);                        % Complex conj of in-domain z-vals
 
 %..........................................................................
 % Construct computational grid with M x M elements & complex variable k
@@ -221,15 +200,14 @@ conjz = conj(z);                            % Complex conj of in-domain z-vals
 %..........................................................................
 x = -s:h:s;
 [K1, K2] = meshgrid(x,x);
-k = K1 + 1i*K2;                                     % The set of all k-vals (matrix)
-numk = Mk*Mk;                                       % Total number of k-vals
+k = K1 + 1i*K2;                         % The set of all k-vals (matrix)
+numk = M*M;                             % Total number of k-vals
 
-kidx_init = find(abs(k)<init_trunc & abs(k)>0.1);
-kidx_max = find(abs(k)<max_trunc & abs(k)>0.1);     % Indices of k-vals in trunc area
+kidx_max = find(abs(k)<max_trunc & abs(k)>0.1); % Indices of k-vals in trunc area
 ktrunc_max = k(kidx_max);
 numktrunc_max = numel(ktrunc_max);
 conjktrunc_max = conj(ktrunc_max);
-conjk = conj(k);                                    % conj of all k-vals (matrix)
+conjk = conj(k);                        % conj of all k-vals (matrix)
 
 % The k-grid for the Green's function beta needs to be larger to accomodate
 % the convolution.
@@ -241,19 +219,20 @@ k_Big           = K1Big + 1i*K2Big;
 %======================Define Green's function beta========================
 
 beta = h*h ./(pi * k_Big); % Mult by h^2 for when we compute the convolution
-beta(Mk+1,Mk+1)=0;           % Set beta(0,0) = 0 to avoid singularity.
+beta(M+1,M+1)=0;           % Set beta(0,0) = 0 to avoid singularity.
 
 % Take the fast fourier transform of the Green's function.
 % This is an averaging (Andreas's form)
-p1 = shiftr(1:(Mtimes2),0,Mk+1,1);
-p  = shiftr(1:(Mtimes2),0,Mk,1);
+p1 = shiftr(1:(Mtimes2),0,M+1,1);
+p  = shiftr(1:(Mtimes2),0,M,1);
 fft_beta  = fftn(beta(p,p)+beta(p1,p1)+beta(p1,p)+beta(p,p1))/4;
 
 %======================= Construct Current Matrix J =======================
-J = J0(:,1:numCP); 
-for kk = 1:numCP
- J = J/norm(J(:,kk),2);
-end
+CurrAmp = max(max(J));
+
+% Now normalize columns of J with respect to the L2 norm.
+J = J * sqrt(2/L)/CurrAmp;
+J(:,L/2) = J(:,L/2) * sqrt(1/2); % The L/2 col. gets different treatment
 
 %============= Precompute some values necessary for Dbar eqn ==============
 
@@ -262,7 +241,7 @@ end
 % eqn. This will be multiplied by the scattering transform later to form
 % the pointwise multiplication operator TR.
 %..........................................................................
-EXP = zeros(Mk,Mk, numz);
+EXP = zeros(M,M, numz);
 for ii = 1:numz
     EXP(:,:,ii) = exp(-1i*(k*z(ii) + conjk*conjz(ii)))./ conjk;
 end
@@ -272,7 +251,7 @@ EXP = EXP / (4*pi);
 %..................Values necessary for linear solver......................
 % Construct rhs of eqn DBO*m = 1. We also use rhs for the init guess.
 rhs = [ones(numk,1); zeros(numk,1)];
-bnrm2 = Mk;  				 % Norm of rhs.
+bnrm2 = M;  				 % Norm of rhs.
 tol = 1e-5;                         % Error tolerance
 maxit = 10;                         % Max number of iterations
 restrt = 5;                         % Max iterations before GMRES restart
@@ -284,17 +263,17 @@ num_frames = 1;      % Number of frames to reconstruct
 %================ Construct DN matrix for reference data ==================
 
 % Normalize the entries so that the voltages sum to zero in each col.
-Vref = Vref(1:numCP,:)'; 
+%  The voltages you get after synthesizing trig are different if you do not do this step first
 adj = sum(Vref)/L;
 Vref = Vref - adj(ones(L,1),:);
 
 
-refLambda = inv(Vref' * J);           % DN map for the reference frame, size numCP x numCP
+refLambda = inv(Vref' * J);           % DN map, size L-1 x L-1
 
 refLhat1 = (A1-1i*B1)*refLambda(1:Ldiv2,1:Ldiv2)*(C1.'+1i*D1.');
-refLhat2 = (A1-1i*B1)*refLambda(1:Ldiv2,Ldiv2+1:numCP)*(C2.'+1i*D2.');
-refLhat3 = (A2-1i*B2)*refLambda(Ldiv2+1:numCP,1:Ldiv2)*(C1.'+1i*D1.');
-refLhat4 = (A2-1i*B2)*refLambda(Ldiv2+1:numCP,Ldiv2+1:numCP)*(C2.'+1i*D2.');
+refLhat2 = (A1-1i*B1)*refLambda(1:Ldiv2,Ldiv2+1:L-1)*(C2.'+1i*D2.');
+refLhat3 = (A2-1i*B2)*refLambda(Ldiv2+1:L-1,1:Ldiv2)*(C1.'+1i*D1.');
+refLhat4 = (A2-1i*B2)*refLambda(Ldiv2+1:L-1,Ldiv2+1:L-1)*(C2.'+1i*D2.');
 
 refLhat = [refLhat1, refLhat2; refLhat3, refLhat4];
 
@@ -310,19 +289,17 @@ for jj = 1:num_frames
     
     
     % Normalize the entries so that the voltages sum to zero in each col.
-    V = V(1:numCP,:)'; 
     adj = sum(V)/L;
     V = V - adj(ones(L,1),:);
-    Lambda = inv(V' * J);   % DN map for the measured frame
+    Lambda = inv(V' * J);
     
     Lhat1 = (A1-1i*B1)*Lambda(1:Ldiv2,1:Ldiv2)*(C1.'+1i*D1.');
-    Lhat2 = (A1-1i*B1)*Lambda(1:Ldiv2,Ldiv2+1:numCP)*(C2.'+1i*D2.');
-    Lhat3 = (A2-1i*B2)*Lambda(Ldiv2+1:numCP,1:Ldiv2)*(C1.'+1i*D1.');
-    Lhat4 = (A2-1i*B2)*Lambda(Ldiv2+1:numCP,Ldiv2+1:numCP)*(C2.'+1i*D2.');
+    Lhat2 = (A1-1i*B1)*Lambda(1:Ldiv2,Ldiv2+1:L-1)*(C2.'+1i*D2.');
+    Lhat3 = (A2-1i*B2)*Lambda(Ldiv2+1:L-1,1:Ldiv2)*(C1.'+1i*D1.');
+    Lhat4 = (A2-1i*B2)*Lambda(Ldiv2+1:L-1,Ldiv2+1:L-1)*(C2.'+1i*D2.');
     Lhat = [Lhat1, Lhat2; Lhat3, Lhat4];
     
-    dLambda = -(Lhat - refLhat); % transformed DN map, size numCP x numCP 
-    %dLambda = Lambda - refLambda;
+    dLambda = (Lhat - refLhat); % transformed DN map, size L-1 x L-1
     
     %==================Compute approx. scattering transform================
     
@@ -336,55 +313,47 @@ for jj = 1:num_frames
     sumj=zeros(size((1i*conjktrunc_max)));
     
     % Compute sums from Jutta's paper and Ethan's work
-    % looping over indices to compute sums from dlambda
     for j=1:L2-1
         akbar_j=((1i*conjktrunc_max).^j)/factorial(j);
         sumj=sumj+ak_L2.*akbar_j.*(dLambda(j,L2)+dLambda(L2+j,L2));
-        for k=1:L2-1
-            ak_k=((1i*ktrunc_max).^k)/factorial(k);
-            sumk=sumk+akbar_L2.*ak_k.*(dLambda(L2,k)+dLambda(L2,L2+k));
-            sumjk=sumjk+akbar_j.*ak_k.*(dLambda(j,k)+dLambda(L2+j,L2+k)+dLambda(j,L2+k)+dLambda(L2+j,k));
+        for r=1:L2-1
+            ak_k=((1i*ktrunc_max).^r)/factorial(r);
+            sumk=sumk+akbar_L2.*ak_k.*(dLambda(L2,r)+dLambda(L2,L2+r));
+            sumjk=sumjk+akbar_j.*ak_k.*(dLambda(j,r)+dLambda(L2+j,L2+r)+dLambda(j,L2+r)+dLambda(L2+j,r));
         end
     end
     texp(kidx_max)=sumjk+sqrt(2)*(sumk+sumj)+2*akbar_L2.*ak_L2.*dLambda(L2,L2);
     
-    % Implement nonuniform truncation of scattering data
-    max_real_texp = max(real(texp(kidx_init)));
-    max_imag_texp = max(imag(texp(kidx_init)));
-    min_real_texp = min(real(texp(kidx_init)));
-    min_imag_texp = min(imag(texp(kidx_init)));
-
-    imagtexp = imag(texp); 
-    realtexp = real(texp); 
-    realtexp( realtexp>max_real_texp | realtexp<min_real_texp ) = 0; 
-    imagtexp( imagtexp>max_imag_texp | imagtexp<min_imag_texp ) = 0; 
-
-    texp= realtexp + 1i * imagtexp; 
-
-    scaling_factor = rmax * dtheta / (eArea * gamma_best);
-    texp = texp * scaling_factor; 
+    texp = texp * rmax* dtheta / (eArea); % JM ADDED THE FACTOR RMAX HERE - SEE LINE (5.18) OF ETHAN'S THESIS.  I think a FACTOR CurrAmp^2 does not need to go IN THE DENOMINATOR because our trig patterns do not include the current amplitude
+    % for plotting only
     
+    % Construct Gaussian window function adjusted to max_trunk
+    a = -log(ee)/max_trunc^2;
+    imaginary_k = imag(k);
+    real_k = real(k);
+    g_window = exp(-a*(real_k.^2 + imaginary_k.^2));
     
-    texpmat = reshape(texp,Mk,Mk);
-    
-    % figure
-    % subplot(1,2,1)
-    % imagesc(real(texpmat))
-    % colormap jet
+
+    tmat = reshape(texp,M,M);
+
+    tmat_trunc = tmat.*g_window;
+ 
+    % figure(2)
+    % surf(real(tmat_trunc))
     % title('Real texp');
     % colorbar;
     % axis square;
-    
-    % subplot(1,2,2)
-    % imagesc(imag(texpmat))
-    % colormap jet
+    % 
+    % figure(3)
+    % surf(imag(tmat_trunc))
     % title('Imag texp');
     % colorbar;
     % axis square;
-    
+
+    %                 break
     
     % This is the pointwise multiplication operator used in the Dbar eqn.
-    TR = repmat(reshape(texp,Mk,Mk),[1,1,numz]) .* EXP;
+    TR = repmat(tmat_trunc,[1,1,numz]) .* EXP;
     
     %==========================Solve Dbar Equation=========================
     
@@ -416,7 +385,7 @@ for jj = 1:num_frames
         f = f(1:numk) + 1i * f(numk+1:2*numk);
         
         % Construct conj(matf) .* T with zero padding to accommodate convolution
-        temp_fT = conj(reshape(f,Mk,Mk)) .* T;
+        temp_fT = conj(reshape(f,M,M)) .* T;
         temp_fT_Big  = zeros(Mtimes2);
         temp_fT_Big((Mdiv2+1):(3*Mdiv2), (Mdiv2+1):(3*Mdiv2)) = temp_fT;  % zero padding
         
@@ -446,7 +415,7 @@ for jj = 1:num_frames
             f = f(1:numk) + 1i * f(numk+1:2*numk);
             
             % Construct conj(matf) .* T with zero padding to accommodate convolution
-            temp_fT = conj(reshape(f,Mk,Mk)) .* T;
+            temp_fT = conj(reshape(f,M,M)) .* T;
             temp_fT_Big  = zeros(Mtimes2);
             temp_fT_Big((Mdiv2+1):(3*Mdiv2), (Mdiv2+1):(3*Mdiv2)) = temp_fT;  % zero padding
             
@@ -547,7 +516,7 @@ for jj = 1:num_frames
                 f = f(1:numk) + 1i * f(numk+1:2*numk);
                 
                 % Construct conj(matf) .* T with zero padding to accommodate convolution
-                temp_fT = conj(reshape(f,Mk,Mk)) .* T;
+                temp_fT = conj(reshape(f,M,M)) .* T;
                 temp_fT_Big  = zeros(Mtimes2);
                 temp_fT_Big((Mdiv2+1):(3*Mdiv2), (Mdiv2+1):(3*Mdiv2)) = temp_fT;  % zero padding
                 
@@ -574,7 +543,7 @@ for jj = 1:num_frames
                     f = f(1:numk) + 1i * f(numk+1:2*numk);
                     
                     % Construct conj(matf) .* T with zero padding to accommodate convolution
-                    temp_fT = conj(reshape(f,Mk,Mk)) .* T;
+                    temp_fT = conj(reshape(f,M,M)) .* T;
                     temp_fT_Big  = zeros(Mtimes2);
                     temp_fT_Big((Mdiv2+1):(3*Mdiv2), (Mdiv2+1):(3*Mdiv2)) = temp_fT;  % zero padding
                     
@@ -645,7 +614,7 @@ for jj = 1:num_frames
                 f = f(1:numk) + 1i * f(numk+1:2*numk);
                 
                 % Construct conj(matf) .* T with zero padding to accommodate convolution
-                temp_fT = conj(reshape(f,Mk,Mk)) .* T;
+                temp_fT = conj(reshape(f,M,M)) .* T;
                 temp_fT_Big  = zeros(Mtimes2);
                 temp_fT_Big((Mdiv2+1):(3*Mdiv2), (Mdiv2+1):(3*Mdiv2)) = temp_fT;  % zero padding
                 
@@ -667,7 +636,7 @@ for jj = 1:num_frames
             end
         end        %=================== END Inline Code for GMRES ====================
         
-        sqrtgamma = m((numk+Mk)/2 +1) + 1i * m( (3*numk + Mk)/2 + 1);
+        sqrtgamma = m((numk+M)/2 +1) + 1i * m( (3*numk + M)/2 + 1);
         gammatemp(ii) = sqrtgamma * sqrtgamma;
     end
     gamma(jj,zidx) = gammatemp;
@@ -677,170 +646,51 @@ end % All images have now been processed.
 
 % Make each conductivity distribution into a matrix, one for each image.
 gamma = reshape(gamma,num_frames,N,N);
-% total_runtime = toc(timestart)
+total_runtime = toc(timestart)
 
-gamma_real = real(gamma);
-
-gamma_all(:,:,frame_idx) = gamma_real;
-
-frame_idx = frame_idx + 1;
+gam_real = real(gamma);
 
 % Switch to DICOM orientation
-% for jj = 1:num_frames
-%     gamma_real(jj,:,:) = fliplr(squeeze(gamma_real(jj,:,:)));
-% end
-
-frames_to_plot = 1:num_frames;
-datamin = min(min(min(gamma_real(frames_to_plot,:,:))));
-datamax = max(max(max(gamma_real(frames_to_plot,:,:))));
-datarange = datamax-datamin;
-
-
-% ==================================================================================================
-% ============================== Set Up the Output Directory and Filename for Each Frame ===========
-% ==================================================================================================
-if ~exist(outdir, 'dir')
-       mkdir(outdir)        
+for jj = 1:num_frames
+    gam_real(jj,:,:) = squeeze(gam_real(jj,:,:));
 end
 
-outstr = [outdir, '/', datafname, '_R', num2str(init_trunc),'_',  num2str(max_trunc), '_Mk', num2str(Mk), '_recontime_', timeStampstr]; 
+frames_to_plot = 1:num_frames;
+datamin = min(min(min(gam_real(frames_to_plot,:,:))));
+datamax = max(max(max(gam_real(frames_to_plot,:,:))));
+datarange = datamax-datamin;
+colorbartrunc = percent_to_truncate_colorbar * .01;
+datamin = datamin + colorbartrunc * datarange;
+datamax = datamax - colorbartrunc * datarange;
 
 
-% ==================================================================================================
-% ================================= Plot and Save Individual Image Reconstruction ==================
-% ==================================================================================================
 if(display_images_to_screen == 1 || save_images_as_jpg_files == 1 )
     for jj = frames_to_plot
-        
-        % choose [yes/no] to display individual image reconstruction images to screen.
         if( display_images_to_screen == 1 )
-            h = figure;                    % create a blank figure window.
+            h = figure;
         else
-            h = figure('visible', 'off');  % Suppress display to screen.
+            h = figure('visible', 'off');  % Suppress display to screen
         end
-        
         colormap(cmap);
-        
-        % generate the pretty image reconstruction.
-        % imagesc(xx,xx,fliplr(squeeze(gamma_all(:,:,1))),[datamin, datamax]);
-        imagesc(xx,xx,flipud(squeeze(gamma_all(:,:,1))),[datamin, datamax]);
-        
+        imagesc(xx,xx,squeeze(gam_real(jj,:,:)),[datamin, datamax]);
         set(gca, 'Ydir', 'normal');
         
-        colorbar;
         axis([-1 1 -1 1 ]);
+        axis off
         axis square;
-        
-        title(['Frame number = ',num2str(frame)]); % add title to figure for reference frame number.
-        
-        % choose [yes/no] to save image individual reconstruction image as a .jpg file.
         if( save_images_as_jpg_files == 1)
-            print(h,'-djpeg', [outstr '.jpg']);
+            print(h,'-djpeg', [output_directory,'recon','.jpg']);
         end
     end
 end
 
-% choose [yes/no] to save a .mat file with the variables used for generating the frame reconstruction.
 if( save_dbar_output_as_mat_file == 1)
-    save([outstr, '.mat'],'gamma_real', 'init_trunc', 'max_trunc', 'Mk', 'hz', 'xx', 'numz',  'refframe', 'texpmat' );
+    save([output_directory, dataset_name, '_GenDom_Skip2Trig', num2str(refimg), '_texp_R', '_',  num2str(max_trunc), '_M', num2str(M),'_zstep', num2str(hh), '.mat'],...
+        'gam_real', 'max_trunc', 'M', 'hh', 'xx', 'numz' );
 end
 
 fclose('all');
 
-end % END MAIN FOR-LOOP ==> gamma_all has been completely filled with 'total_frames'-# of reconstructions.
 
 
-% ==================================================================================================
-% =================================== Create a Movie with the Image Reconstructions ================
-% ==================================================================================================
-% set up movie output directories.
-% 'Dbar_human_recons_movies'
-% movie_outdir = [outdir, '/Dbar_movie_', datafname];  % directory for the .avi movie file.
-% movie_outdir = ['Dbar_human_recons_movies/Dbar_movie_', datafname]; % directory for the .avi movie file.
-movie_outdir = 'Dbar_human_recons_movies';           % directory for the .avi movie file.
-% movie_outstr = [outdir,'/',outFname];              % directory for the .mat file.
-% movie_outstr = [movie_outdir, '/', movie_outFname];  % directory for the .mat file. 
-movie_outFname = ['Dbar_movie_', datafname];         % output filename for movie.
-movie_outstr = [movie_outdir, '/', movie_outFname];  % directory for the .mat file. 
-
-
-% create the movie outdir if it doesn't exist.
-if ~exist(movie_outdir, 'dir')
-        mkdir(movie_outdir)
-end
-
-% create video writer object in the output directory.
-% writerObj = VideoWriter([outdir,'/Dbar_movie_',datafname]);
-writerObj = VideoWriter([movie_outdir, '/', movie_outFname]);
-
-% set the frame rate to one frame per second
-set(writerObj,'FrameRate',5);
-
-% open the writer object.
-open(writerObj);
-
-% Standardizing the colorbar for the image reconstruction.
-max_gamma_all = max(max(max(gamma_all)));
-min_gamma_all = min(min(min(gamma_all)));
-range_gamma = max_gamma_all - min_gamma_all;
-cmax_gamma = max_gamma_all - 0.1*range_gamma;
-cmin_gamma = min_gamma_all + 0.1*range_gamma;
-
-% initialize variable to keep track of the current frame # in the for-loop.
-frame_idx = 1; 
-
-
-%% Plot movie
-% iterate over all frames (MINUS the reference frame)
-for frame_num = all_frames
-    % choose [yes/no] to display movie to screen.
-    if plot_movie == 1
-        figure('visible','on');
-    else
-        figure('Visible','off');
-    end
-
-    colormap(cmap)
-
-    % generate the pretty image reconstruction.
-    % imagesc(flipud(gamma_all(:,:,frame_idx)))
-    imagesc(flipud(gamma_all(:,:,frame_idx)))
-    % imagesc(xx,xx,fliplr(squeeze(gamma_real(:,:,frame_idx))),[datamin, datamax]);
-    
-    caxis([cmin_gamma,cmax_gamma])
-    colorbar
-    axis square
-    % set(gca,'XTick',[]); set(gca,'YTick',[])
-    set(gca, 'Ydir', 'normal')
-
-    title(['Frame number = ',num2str(frame_num)]); % add title to figure for reference frame number.
-    
-    frame_num_double = double(frame_num); % this conversion is somehow needed for title.
-    
-    % Convert frame_num to string.
-    frame_str = ['Frame Number: ' num2str(frame_num_double)];
-    
-    %saveas(gcf,[outFname,'.png'])
-    
-    frame_pick = getframe(gcf);
-    
-    writeVideo(writerObj, frame_pick);
-    
-    frame_idx = frame_idx + 1; % to iterate through all frames in gamma all.
-
-end % END PLOTTING MOVIE
-
-
-%% save movie to file
-% choose [yes/no] to save the movie to a .avi file.
-if saved==1
-    % outFname  = ['Dbar_movie_', datafname];
-    % if ~exist(outdir, 'dir')
-    %     mkdir(outdir)
-    % end
-    % save([outdir,'/',outFname, '.mat'],'gamma_real', 'init_trunc', 'max_trunc', 'Mk', 'hz', 'xx', 'numz',  'refframe', 'texpmat' );
-    save([movie_outstr, '.mat'], 'gamma_real', 'init_trunc', 'max_trunc', 'Mk', 'hz', 'xx', 'numz',  'refframe', 'texpmat' );
-end
-
-% close the video writer object
-close(writerObj);
+%end  % End function

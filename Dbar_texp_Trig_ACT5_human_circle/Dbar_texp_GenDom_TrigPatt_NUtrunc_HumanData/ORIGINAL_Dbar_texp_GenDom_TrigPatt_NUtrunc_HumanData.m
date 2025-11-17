@@ -32,7 +32,7 @@ total_runtime = 0;
 %--------------------------------------------------------------------------
 save_dbar_output_as_mat_file = 0;
 display_images_to_screen = 1;
-save_images_as_jpg_files =1;
+save_images_as_jpg_files =0;
 
 
 %--------------------------------------------------------------------------
@@ -47,22 +47,38 @@ data_dir = 'ACT5_humanData/';
 data_fname = 'Sbj001_93kHz_vent_24_10_15_10_51_57_1';
 trg_frame = 96;
 ref_frame = 37;
-
+L = 32;                  % Number of electrodes
 
 % Load the target voltage data -- i.e. the thing we want to reconstruct
-load([data_dir, data_fname]);
-Vmulti = real(frame_voltage);
-V = Vmulti(:,:,trg_frame);  % NOTE: CHANGE 'TRG_FRAME' WHEN MAKE MOVIE
-J = cur_pattern;
 
+load([data_dir, data_fname]);
+V_total = frame_voltage;
+V = V_total(:,:,trg_frame);
+V(:,L) = [];
+V = V.*1000;
+
+J = cur_pattern;
+J(:,L) = [];
 total_num_frames = 1;
 
 % Load homogenous data
-Vref = Vmulti(:,:,ref_frame);
+Vref = V_total(:,:,ref_frame);
+Vref(:,L) = [];
+Vref = Vref.*1000;
+
+
+% data = load([data_dir, data_fname]);
+% V_total = data.voltages;
+% V = V_total(trg_frame,:);
+% J = data.currents;
+% total_num_frames = 1;
+% 
+% % Load homogenous data
+% Vref = V_total(ref_frame,:);
 
 
 % Directory where program output will be saved
-output_directory = 'HumanRecons';
+output_directory = [];
 
 % File containing list of bdry pts and the directory where it is stored
 bdry_file = 'EllipseBdry_1_952p6mm.txt';
@@ -85,7 +101,7 @@ hh = 0.015;               % Spatial z-grid step size. This changes the number
 ee = 0.05; % Used to compute width of Gaussian window in FT. Smaller = more truncation
 
 % Specify a circular truncation region for the low-pass Fourier domain filter
-max_trunc = 3.5;         % Final max trunc. radius. Choose something bigger
+max_trunc = 4.2;         % Final max trunc. radius. Choose something bigger
 
 % Truncates colorbar for display purposes. Enter an integer from 0 to 10.
 % If displaying a small number of images, choose something smaller.
@@ -94,14 +110,13 @@ percent_to_truncate_colorbar = 0;
 % Select colormap for figures
 cmap = 'jet';
 
-J0 = cur_pattern;
-L = length(J0);                  % Number of electrodes
+
 
 %================= END Set up Dataset-Specific Info =======================
 
 
 % Load bdry pts. Odd-indixed pts are electrode ctrs
-coords = zeros(L,2); 
+coords = load([bdry_directory, bdry_file], '-ascii');
 
 
 %figure
@@ -123,13 +138,11 @@ Mtimes2 = 2*M;
 eheight = 0.0254; ewidth = 0.0254;      % Electrode height, width (meters)
 eArea = ewidth * eheight;              % Area of electrode (meters^2)
 dtheta = 2*pi/L;                % We assume equal electrode spacing.
-etheta = dtheta:dtheta:2*pi;                    % Angular positions of electrode centers
 
-x_bdry = cos(etheta)'; y_bdry = sin(etheta)'; 
 
 %================ Set up Boundary Data and Arclength function==============
 
-coords(:,1) = x_bdry;  coords(:,2) = y_bdry;
+x_bdry = coords(:,1); y_bdry = coords(:,2);
 
 % Get polygon data: geom = [ area   X_cen  Y_cen  perimeter ]
 [geom,~,~] = polygeom(x_bdry,y_bdry);
@@ -140,7 +153,7 @@ x_bdry = x_bdry - geom(2); y_bdry = y_bdry - geom(3);
 % Scale to match physical parameters
 ScaleFactor = Perim / geom(4);
 
-% x_bdry = x_bdry * ScaleFactor; y_bdry = y_bdry * ScaleFactor;
+x_bdry = x_bdry * ScaleFactor; y_bdry = y_bdry * ScaleFactor;
 %figure
 %plot(x_bdry,y_bdry,'*')  % Plots the boundary
 %axis square
@@ -160,7 +173,7 @@ x_bdry = rot_coords(1,:)'; y_bdry = rot_coords(2,:)';
 %title('Scaled and rotated boundary shape')
 
 % Angles corresponding to electrode centers
-% etheta = dtheta:dtheta:2*pi;  % assume equal angular spacing
+etheta = dtheta:dtheta:2*pi;  % assume equal angular spacing
 
 
 
@@ -325,23 +338,16 @@ for jj = 1:num_frames
     texp = texp * rmax* dtheta / (eArea); % JM ADDED THE FACTOR RMAX HERE - SEE LINE (5.18) OF ETHAN'S THESIS.  I think a FACTOR CurrAmp^2 does not need to go IN THE DENOMINATOR because our trig patterns do not include the current amplitude
     % for plotting only
     
-    
-
     % Construct Gaussian window function adjusted to max_trunk
     a = -log(ee)/max_trunc^2;
     imaginary_k = imag(k);
     real_k = real(k);
     g_window = exp(-a*(real_k.^2 + imaginary_k.^2));
+    
 
     tmat = reshape(texp,M,M);
-    
-    figure(1)
-    surf(real(tmat))
 
     tmat_trunc = tmat.*g_window;
-    
-    figure(2)
-    surf(real(tmat_trunc))
  
     % figure(2)
     % surf(real(tmat_trunc))
