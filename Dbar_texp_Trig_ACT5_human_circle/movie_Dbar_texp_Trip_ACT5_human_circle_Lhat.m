@@ -32,7 +32,7 @@ save_dbar_output_as_mat_file = 0;
 display_images_to_screen = 0;
 save_images_as_jpg_files = 0;
 plot_movie = 0;
-saved = 1;
+saved = 0;
 
 %===================================================================================================
 %======================================== Specify External Data ====================================
