@@ -1,30 +1,31 @@
+% for no-gauss trunc
+
 %===================================================================================================
 % This script runs the D-bar algorithm, calling the necessary functions to compute the approximate 
 % scattering transform texp and solve the Dbar equation
 %
-% This code is set up to reconstruct human data as difference images by selecting one reference
-% frame from a multiframe dataset. 
+% This code is set up to reconstruct and plot 1 human data frame as a difference
+% image by selecting a frame at which a mid-systole occurs as the reference
+% frame.
+%
+% Note: fill_gamma_all.m can also reconstruct and plot single frames, but
+% the reference frame used in that script is the frame with the highest
+% average conductivity. In contrast, this script chooses the mid-systole
+% frame closest to the frame chosen to reconstruct (e.g., say the
+% mid-systoles in a dataset occur at frames 5, 11, 29, ... and I want to reconstruct frame 7. Then, 
+% I would choose frame 5 as the reference frame).
 %
 % This is for…
 % - ACT5 human data
 % - circular domain
 % - trig patterns
 % - manual truncation (no gaussian truncation)
-% - reference frame used: frame found in our "find-reference-frame" script.
-%
-% Note: this uses the transformed DN map, so general domain functionality could
-% be implemented by importing electrode positions from a boundary file, but this is not currently
-% done in this code. 
-% 
-% Note: this code currently reconstructs a single image, using averages of both measured and
-% reference voltages. A loop over multiple frames exists, however, so it could be easily modified to
-% reconstruct multiple frames.
+% - reference frame used: frame at which a mid-systole occurs in ECG signal.
 %
 % Note: this code is a little messy and could be cleaned up some, but it does seem to work fine
-
-% Authors:          Melody Alsaker, Jennifer Mueller, Peter Muller
-%                   Modifications made by Drew Fitzpatrick, Lydia Lonzarich, and Matthew Wong
-% Date Modified:    December 2025
+%
+% Authors:              Lydia Lonzarich
+% Date Modified:        January 13, 2025
 %
 %===================================================================================================
 
@@ -38,9 +39,9 @@ timestart = tic;
 % ================================= Choose What to Plot and Save ===================================
 % ==================================================================================================
 save_dbar_output_as_mat_file = 0;
-display_images_to_screen = 1;
+display_images_to_screen = 0;
 save_images_as_jpg_files = 0;
-plot_movie = 0;
+plot_movie = 1;
 saved = 0;
 
 %===================================================================================================
@@ -51,7 +52,7 @@ datadir = 'ACT5_humanData/';
 
 % File name of .mat file containing EIT data.
 % datafname = 'modified_16x16_Sbj02_2D_16e_24_10_16_12_38_03_93750';
-datafname = 'Sbj001_93kHz_vent_24_10_15_10_51_57_1';
+datafname = 'perf_chunk_2_Sbj02_2D_16e_24_10_16_12_38_03_93750';
 
 % Directory for the program output to be saved to. If it doesn't exist, we'll create it later.
 outdir = 'HumanRecons';
@@ -67,35 +68,21 @@ hz = 0.02;              % z-grid step size used to create the z grid (xx=-1:hz:1
 %===================================================================================================
 %======================================== Specify Reconstruction Parameters ========================
 %===================================================================================================
-refframe = 37;    % Reference frame (e.g. at max expiration)
-startframe = 200;    
-endframe = 200;  
+% must include ALL frames in startframe-endframe range to ensure mid-systoles are found correctly.   
+startframe = 1;  
+endframe = 261;
 
-% determine the total # of frames to reconstruct (we must ignore the reference frame when it's in the range (startframe,endframe))
-if refframe >= startframe & refframe <= endframe
-    total_reconstruct_frames = endframe - startframe;
-else
-    total_reconstruct_frames = endframe - startframe + 1;
-end
-
-% initialize gamma_all for storing all frame reconstructions. 
-xx = -1:hz:1;
-N = numel(xx);
-gamma_all = zeros(N, N, total_reconstruct_frames);
-
-frame_idx = 1; % initialize the main for-loop indexing variable to 1.
-  
-% "grab" all frames in the dataset (MINUS the reference frame).
-all_frames = startframe:endframe;
-all_frames(all_frames == refframe) = []; % remove refframe index from the list of frames (that we'll iterate over).
+init_trunc = 3.6;         % Initial trunc. radius. Used to trunc scattering transform. Choose something smallish
+max_trunc = 3.8;          % Final max trunc. radius. Used to trunc scattering transform. Choose something bigger
 
 gamma_best = 300;
 
-cmap = 'jet';           % Select colormap for figures
+cmap = 'jet';             % Select colormap for figures
 
-init_trunc = 4.1;       % Initial trunc. radius. Used to trunc scattering transform. Choose something smallish
-max_trunc = 4.6;          % Final max trunc. radius. Used to trunc scattering transform. Choose something bigger
+global_frame_idx = 1;     % to count the reconstructed frames?
 
+% active_elecs = 1:32;      % FOR SBJ001 DATASETS.
+active_elecs = 1:16;      % FOR SBJ002 DATASETS...because current is only applied to electrodes 1-16, according to Jennifer.
 
 %===================================================================================================
 %======================== Load and Extract External Data & Physical Parameters =====================
@@ -103,22 +90,75 @@ max_trunc = 4.6;          % Final max trunc. radius. Used to trunc scattering tr
 % Load measured data. We will pull various physical parameters from this.  
 load([datadir, datafname])
 
+% trim voltage measurement .mat files.
+Vmulti = real(frame_voltage);                     % 32 x 32 x 2843 (raw voltage matrix)
+Vmulti = Vmulti(active_elecs, active_elecs, :);   % 16 x 16 x 2843 (remove 0 voltage row)
+Vmulti_perf = Vmulti(:,:,startframe:endframe);    % 16 x 16 x num_frames=261
+
+% extract mid-systoles. These will be used as reference frames.
+mid_systoles = find_mid_systoles(Vmulti_perf);
+disp(mid_systoles) % there are 26.
+
+% "grab" all selected frames in the dataset.
+all_frames = startframe:endframe; % 261
+
+% remove the mid-systole frames from the list of frames to reconstruct.
+frames_to_reconstruct = setdiff(all_frames, mid_systoles);
+disp("number of frames to reconstruct: " + num2str(length(frames_to_reconstruct)))
+
+% initialize gamma_all for storing all frame reconstructions. 
+xx = -1:hz:1;
+N = numel(xx);
+total_frames = endframe - startframe + 1; 
+% gamma_all = NaN(N, N, total_frames); % used to be zeros
+
+% define the number of reference frames to be used.
+num_refframes = length(mid_systoles);
+
 
 %===================================================================================================
 %======================== Generate Reconstructions With the Dbar Algorithm =========================
 %===================================================================================================
-% START OF MAIN FOR-LOOP (the dbar algorithm)
-% Iterate over all frames in dataset (MINUS reference frames) and fill gamma_all with frame reconstructions. 
-for frame = all_frames
+% for cycle_idx = 1:num_refframes
+% curr_mid_systole = mid_systoles(cycle_idx);
+% disp("Current mid-systole: " + curr_mid_systole)
+% disp("Reference frame #: " + cycle_idx)
+
+% to reconstruct 1 frame:
+refframe = mid_systoles(9);
+Vref = Vmulti_perf(:,:,refframe);    % grab the reference frame's voltages.
+
+% define the frames to be used against the current iteration's reference frame.
+curr_frames = refframe + 3;
+disp("curr frame: " + curr_frames)
+num_frames = 1;
+
+% % reconstruct frames around the current mid-systole: 5 before mid-systole --> 5 after mid-systole
+% % disp("all frames: " + all_frames)
+% % disp("startframe: " + startframe)
+% % disp("curr mid systole: " + curr_mid_systole)
+% frames_to_reconstruct = find(all_frames >= startframe & all_frames <= curr_mid_systole + 5);
+% disp("number of frames to reconstruct: " + length(frames_to_reconstruct))
+% 
+% % increment the starting frame for next iteration
+% startframe = curr_mid_systole + 5;
 
 
-    % Voltages (use these to derive DN map)
-    Vmulti = real(frame_voltage);   % Voltages for all frames in .mat file
-    V = Vmulti(:,:,frame);          % Target frame voltage matrix. Selecting the measured voltage at 'frame' index
-    Vref = Vmulti(:,:,refframe);    % Reference frame voltage matrix
+% START OF DBAR ALGORITHM
+% Iterate over all frames in dataset subset and fill gamma_all with frame reconstructions. 
+% for frame = frames_to_reconstruct
+for frame = curr_frames
+
+    V = Vmulti_perf(:,:,frame); % measured voltages for the current frame. 
+
+    % % Voltages (use these to derive DN map)
+    % Vmulti = real(frame_voltage);   % Voltages for all frames in .mat file
+    % V = Vmulti(:,:,frame);          % Target frame voltage matrix. Selecting the measured voltage at 'frame' index
+    % Vref = Vmulti(:,:,refframe);    % Reference frame voltage matrix
     
     % Current pattern matrix (unnormalized and including all columns) (use these to derive DN map)
-    J0 = cur_pattern; 
+    J0 = cur_pattern;
+    J0 = J0(active_elecs, active_elecs);
     
     L = length(J0);    % Number of electrodes
     numCP = L-1;       % Number of linearly independent current patterns
@@ -252,7 +292,8 @@ for frame = all_frames
     %======================= Construct Current Matrix J =======================
     J = J0(:,1:numCP); 
     for kk = 1:numCP
-     J = J/norm(J(:,kk),2);
+     % J = J/norm(J(:,kk),2);
+        J(:,kk) = J(:,kk) / norm(J(:,kk), 2);
     end
     
     %============= Precompute some values necessary for Dbar eqn ==============
@@ -279,17 +320,32 @@ for frame = all_frames
     e1 = [1; zeros(2*numk-1,1)];        % First basis vector for R^n
     
     
-    num_frames = 1;      % Number of frames to reconstruct
+    % num_frames = 1;      % Number of frames to reconstruct
+    % num_frames = length(curr_frames);
     
     %================ Construct DN matrix for reference data ==================
     
-    % Normalize the entries so that the voltages sum to zero in each col.
-    Vref = Vref(1:numCP,:)'; 
-    adj = sum(Vref)/L;
-    Vref = Vref - adj(ones(L,1),:);
+    % % Normalize the entries so that the voltages sum to zero in each col.
+    % % Vref = Vref(1:numCP, :)';      % 16 x 15 ==> 
+    % Vref = Vref(:, 1:numCP);         % Vref was 16x15, but we want to keep only the 15 linearly independent current patterns while keeping all electrodes, so drop one col ==> 16 x 15.
+    % adj = sum(Vref)/L;               % 1 x 15
+    % % Vref = Vref - adj(ones(L,1),:);
+    % Vref = Vref - adj;               % 16 x 15 x num_frames (implicit expansion).
+    % Vref = Vref';                    % transpose Vref: 16 x 15 ==> 15 x 16
     
-    
-    refLambda = inv(Vref' * J);           % DN map for the reference frame, size numCP x numCP
+
+
+    % trying new stuff
+    Vref = Vref(1:numCP, :); % 16x16 ==> 15x16
+    Vref = Vref';            % 15x16 ==> 16x15
+    adj = sum(Vref)/L;       
+    Vref = Vref - adj;
+    Vref = Vref';            % 16x15 ==> 15x16
+    % end of trying new stuff
+
+
+
+    refLambda = inv(Vref * J);       % DN map for the reference frame, size numCP x numCP
     
     refLhat1 = (A1-1i*B1)*refLambda(1:Ldiv2,1:Ldiv2)*(C1.'+1i*D1.');
     refLhat2 = (A1-1i*B1)*refLambda(1:Ldiv2,Ldiv2+1:numCP)*(C2.'+1i*D2.');
@@ -305,15 +361,36 @@ for frame = all_frames
     
     
     for jj = 1:num_frames
+        % disp("iteration: " + jj)
+        % V = Vmulti_perf(:,:,jj); 
+
+        actual_frame = curr_frames(jj);
+        V = Vmulti_perf(:, :, actual_frame);
+        
         gammatemp = zeros(1,numz);
         %================= Construct DN matrix for measured data ==============
         
         
-        % Normalize the entries so that the voltages sum to zero in each col.
-        V = V(1:numCP,:)'; 
-        adj = sum(V)/L;
-        V = V - adj(ones(L,1),:);
-        Lambda = inv(V' * J);   % DN map for the measured frame
+        % % Normalize the entries so that the voltages sum to zero in each col.
+        % % V = V(1:numCP,:)'; 
+        % V = V(:, 1:numCP);          % 16 x 16 ==> 16 x 15
+        % adj = sum(V)/L;             % 1 x 15
+        % % V = V - adj(ones(L,1),:);
+        % V = V - adj;                % 16 x 15
+        % V = V';                     % 16 x 15 ==> 15 x 16
+
+
+
+        % new - trying stuff
+        V = V(1:numCP, :); % 16x16 ==> 15x16
+        V = V';            % 15x16 ==> 16x15
+        adj = sum(V)/L;       
+        V = V - adj;
+        V = V';            % 16x15 ==> 15x16
+        % end of trying new stuff
+
+
+        Lambda = inv(V * J);   % DN map for the measured frame
         
         Lhat1 = (A1-1i*B1)*Lambda(1:Ldiv2,1:Ldiv2)*(C1.'+1i*D1.');
         Lhat2 = (A1-1i*B1)*Lambda(1:Ldiv2,Ldiv2+1:numCP)*(C2.'+1i*D2.');
@@ -321,8 +398,8 @@ for frame = all_frames
         Lhat4 = (A2-1i*B2)*Lambda(Ldiv2+1:numCP,Ldiv2+1:numCP)*(C2.'+1i*D2.');
         Lhat = [Lhat1, Lhat2; Lhat3, Lhat4];
         
-        dLambda = Lhat - refLhat; % transformed DN map, size numCP x numCP 
-        % dLambda = -(Lhat - refLhat); % transformed DN map, size numCP x numCP 
+        % dLambda = Lhat - refLhat; % transformed DN map, size numCP x numCP 
+        dLambda = -(Lhat - refLhat); % transformed DN map, size numCP x numCP 
         %dLambda = Lambda - refLambda;
         
         %==================Compute approx. scattering transform================
@@ -680,164 +757,194 @@ for frame = all_frames
     
     gamma_real = real(gamma);
     
-    gamma_all(:,:,frame_idx) = gamma_real;
-    
-    frame_idx = frame_idx + 1;
+    % gamma_all(:,:,global_frame_idx) = squeeze(gamma_real(jj,:,:));
+    % global_frame_idx = global_frame_idx + 1;
+
+    gamma_single = squeeze(gamma_real(1,:,:));
+    % gamma_all(:, :, global_frame_idx) = gamma_real;
+    % global_frame_idx = global_frame_idx + 1;
     
     % Switch to DICOM orientation
     % for jj = 1:num_frames
     %     gamma_real(jj,:,:) = fliplr(squeeze(gamma_real(jj,:,:)));
     % end
     
-    % Standardizing the colorbar for INDIVIDUAL image reconstruction.
-    % (1) comment / uncomment for more robust percentile method.
-    % all_vals = gamma_all(:);
-    % datamin = prctile(all_vals, 2);
-    % datamax = prctile(all_vals, 98);
-
-    % (2) comment / uncomment for og min/max method.
     frames_to_plot = 1:num_frames;
     datamin = min(min(min(gamma_real(frames_to_plot,:,:))));
     datamax = max(max(max(gamma_real(frames_to_plot,:,:))));
     datarange = datamax-datamin;
     
     
-    % ==================================================================================================
-    % ============================== Set Up the Output Directory and Filename for Each Frame ===========
-    % ==================================================================================================
-    if ~exist(outdir, 'dir')
-           mkdir(outdir)        
-    end
-    
-    outstr = [outdir, '/', datafname, '_R', num2str(init_trunc),'_',  num2str(max_trunc), '_Mk', num2str(Mk), '_recontime_', timeStampstr]; 
-    
-    
-    % ==================================================================================================
-    % ================================= Plot and Save Individual Image Reconstruction ==================
-    % ==================================================================================================
-    if(display_images_to_screen == 1 || save_images_as_jpg_files == 1 )
-        for jj = frames_to_plot
-            
-            % choose [yes/no] to display individual image reconstruction images to screen.
-            if( display_images_to_screen == 1 )
-                h = figure;                    % create a blank figure window.
-            else
-                h = figure('visible', 'off');  % Suppress display to screen.
-            end
-            
-            colormap(cmap);
-            
-            % generate the pretty image reconstruction.
-            imagesc(xx,xx,flipud(squeeze(gamma_all(:,:,1))),[datamin, datamax]);
-            
-            set(gca, 'Ydir', 'normal');
-            
-            colorbar;
-            axis([-1 1 -1 1 ]);
-            axis square;
-            
-            title(['Frame number = ',num2str(frame), ', init trunc = ', num2str(init_trunc), ', max trunc = ', num2str(max_trunc), ', refframe = ', num2str(refframe)]); % add title to figure for reference frame number.
-            
-            % choose [yes/no] to save image individual reconstruction image as a .jpg file.
-            if( save_images_as_jpg_files == 1)
-                print(h,'-djpeg', [outstr '.jpg']);
-            end
-        end
-    end
-    
-    % choose [yes/no] to save a .mat file with the variables used for generating the frame reconstruction.
-    if( save_dbar_output_as_mat_file == 1)
-        save([outstr, '.mat'],'gamma_real', 'init_trunc', 'max_trunc', 'Mk', 'hz', 'xx', 'numz',  'refframe', 'texpmat' );
-    end
-    
-    fclose('all');
+    figure;
+    colormap(cmap);
+    imagesc(xx, xx, flipud(gamma_single)); 
+    axis square;
+    set(gca, 'YDir', 'normal')
+    colorbar;
 
-end % END MAIN FOR-LOOP ==> gamma_all has been completely filled with 'total_frames'-# of reconstructions.
+    title(['Target frame = ', num2str(curr_frames), ...
+        ', reference (mid-systole) = ', num2str(refframe), ...
+        ', init_trunc = ', num2str(init_trunc), ...
+        ', max trunc = ', num2str(max_trunc)]);
 
-
-%% 
-% ==================================================================================================
-% =================================== Create a Movie with the Image Reconstructions ================
-% ==================================================================================================
-% set up movie output directories.
-movie_outdir = 'Dbar_human_recons_movies';                 % directory for the .avi recon movie file.
-movie_outFname = ['dec19_1652_short_Dbar_movie_', datafname];         % output filename for recon movie.
-movie_outstr = [movie_outdir, '/', movie_outFname];        % directory for the recon movie's corresponding .mat file. 
-
-% create the movie outdir if it doesn't exist.
-if ~exist(movie_outdir, 'dir')
-        mkdir(movie_outdir)
 end
 
-% create video writer object in the output directory.
-writerObj = VideoWriter([movie_outdir, '/', movie_outFname]);
-
-% set the frame rate to one frame per second
-set(writerObj,'FrameRate',5);
-
-% open the writer object.
-open(writerObj);
-
-% Standardizing the colorbar for image reconstruction MOVIE (two options below)...
-% (1) comment / uncomment for more robust percentile method.
-% all_vals = gamma_all(:);
-% cmin_gamma = prctile(all_vals, 2);
-% cmax_gamma = prctile(all_vals, 98);
-
-% (2) comment / uncomment for og min/max method.
-max_gamma_all = max(max(max(gamma_all)));
-min_gamma_all = min(min(min(gamma_all)));
-range_gamma = max_gamma_all - min_gamma_all;
-cmax_gamma = max_gamma_all - 0.2*range_gamma;
-cmin_gamma = min_gamma_all + 0.2*range_gamma;
-
-% initialize variable to keep track of the current frame # in the for-loop.
-frame_idx = 1; 
 
 
-% Plot movie
-% iterate over all frames (MINUS the reference frame)
-for frame_num = all_frames
-    % choose [yes/no] to display movie to screen.
-    if plot_movie == 1
-        figure('visible','on');
-    else
-        figure('Visible','off');
-    end
-
-    colormap(cmap)
-
-    % generate the pretty image reconstruction.
-    imagesc(flipud(gamma_all(:,:,frame_idx)))
-    
-    caxis([cmin_gamma,cmax_gamma])
-    colorbar
-    axis square
-    set(gca, 'Ydir', 'normal')
-
-    title(['Frame number = ',num2str(frame_num), ...
-           ', init trunc = ', num2str(init_trunc), ...
-           ', max trunc = ', num2str(max_trunc)]); % add title to figure for reference frame number.
-    
-    frame_num_double = double(frame_num); % this conversion is somehow needed for title.
-    
-    % Convert frame_num to string.
-    frame_str = ['Frame Number: ' num2str(frame_num_double)];
-        
-    frame_pick = getframe(gcf);
-    
-    writeVideo(writerObj, frame_pick);
-    
-    frame_idx = frame_idx + 1; % to iterate through all frames in gamma all.
-
-end % END PLOTTING MOVIE
 
 
-%% save movie to file
-% choose [yes/no] to save the movie to a .avi file.
-if saved==1
-    save([movie_outstr, '.mat'], 'gamma_real', 'init_trunc', 'max_trunc', 'Mk', 'hz', 'xx', 'numz',  'refframe', 'texpmat' );
-end
 
-% close the video writer object
-close(writerObj);
+% 
+%     % ==================================================================================================
+%     % ============================== Set Up the Output Directory and Filename for Each Frame ===========
+%     % ==================================================================================================
+%     if ~exist(outdir, 'dir')
+%            mkdir(outdir)        
+%     end
+% 
+%     outstr = [outdir, '/', datafname, '_R', num2str(init_trunc),'_',  num2str(max_trunc), '_Mk', num2str(Mk), '_recontime_', timeStampstr]; 
+% 
+% 
+%     % ==================================================================================================
+%     % ================================= Plot and Save Individual Image Reconstruction ==================
+%     % ==================================================================================================
+%     if(display_images_to_screen == 1 || save_images_as_jpg_files == 1 )
+%         for jj = frames_to_plot
+% 
+%             % choose [yes/no] to display individual image reconstruction images to screen.
+%             if( display_images_to_screen == 1 )
+%                 h = figure;                    % create a blank figure window.
+%             else
+%                 h = figure('visible', 'off');  % Suppress display to screen.
+%             end
+% 
+%             colormap(cmap);
+% 
+%             % generate the pretty image reconstruction.
+%             imagesc(xx,xx,flipud(squeeze(gamma_all(:,:,1))),[datamin, datamax]);
+% 
+%             set(gca, 'Ydir', 'normal');
+% 
+%             colorbar;
+%             axis([-1 1 -1 1 ]);
+%             axis square;
+% 
+%             title(['Frame number = ',num2str(frame), ', init trunc = ', num2str(init_trunc), ', max trunc = ', num2str(max_trunc), ', refframe = ', num2str(refframe)]); % add title to figure for reference frame number.
+% 
+%             % choose [yes/no] to save image individual reconstruction image as a .jpg file.
+%             if( save_images_as_jpg_files == 1)
+%                 print(h,'-djpeg', [outstr '.jpg']);
+%             end
+%         end
+%     end
+% 
+%     % choose [yes/no] to save a .mat file with the variables used for generating the frame reconstruction.
+%     if( save_dbar_output_as_mat_file == 1)
+%         save([outstr, '.mat'],'gamma_real', 'init_trunc', 'max_trunc', 'Mk', 'hz', 'xx', 'numz',  'refframe', 'texpmat' );
+%     end
+% 
+%     fclose('all');
+% 
+% end % END MAIN FOR-LOOP ==> gamma_all has been completely filled with 'total_frames'-# of reconstructions.
+% % end
+% 
+% 
+% %%
+% if plot_movie == 1
+% % ==================================================================================================
+% % =================================== Create a Movie with the Image Reconstructions ================
+% % ==================================================================================================
+%     % set up movie output directories.
+%     movie_outdir = 'Dbar_human_recons_movies';                 % directory for the .avi recon movie file.
+%     movie_outFname = ['TESTING_short_Dbar_movie_refframe=midsystole_frames1500_1700', datafname];         % output filename for recon movie.
+%     movie_outstr = [movie_outdir, '/', movie_outFname];        % directory for the recon movie's corresponding .mat file. 
+% 
+%     % create the movie outdir if it doesn't exist.
+%     if ~exist(movie_outdir, 'dir')
+%             mkdir(movie_outdir)
+%     end
+% 
+%     % create video writer object in the output directory.
+%     writerObj = VideoWriter([movie_outdir, '/', movie_outFname]);
+% 
+%     % set the frame rate to one frame per second
+%     set(writerObj,'FrameRate',5);
+% 
+%     % open the writer object.
+%     open(writerObj);
+% 
+%     % Standardizing the colorbar for the image reconstruction.
+%     max_gamma_all = max(max(max(gamma_all)));
+%     min_gamma_all = min(min(min(gamma_all)));
+%     % max_gamma_all = max(gamma_all(:), [], 'omitnan');
+%     % min_gamma_all = min(gamma_all(:), [], 'omitnan');
+%     range_gamma = max_gamma_all - min_gamma_all;
+%     cmax_gamma = max_gamma_all - 0.2*range_gamma;
+%     cmin_gamma = min_gamma_all + 0.2*range_gamma;
+% 
+%     % if cmin_gamma >= cmax_gamma
+%     %     cmin_gamma = min_gamma_all;
+%     %     cmax_gamma = max_gamma_all;
+%     % end
+% 
+%     % initialize variable to keep track of the current frame # in the for-loop.
+%     % frame_idx = 1; 
+% 
+%     % num_movie_frames = size(gamma_all, 3);
+%     movie_frames = frames_to_reconstruct;
+% 
+%     % Plot movie
+%     % iterate over all frames (MINUS the reference frame)
+%     for ii = 1:length(movie_frames)
+%     % for frame_num = all_frames
+%         % choose [yes/no] to display movie to screen.
+%         if plot_movie == 1
+%             figure('visible','on');
+%         else
+%             figure('Visible','off');
+%         end
+% 
+%         frame_idx = movie_frames(ii);
+% 
+%         colormap(cmap)
+% 
+%         % generate the pretty image reconstruction.
+%         imagesc(flipud(gamma_all(:,:,frame_idx)))
+% 
+%         caxis([cmin_gamma,cmax_gamma])
+%         colorbar
+%         axis square
+%         set(gca, 'Ydir', 'normal')
+% 
+%         % caxis([min(gamma_all(:)), max(gamma_all(:))])
+%         % caxis([0.9951, 1.0117]);
+% 
+%         title(['Frame number = ',num2str(frame_idx), ...
+%                ', init trunc = ', num2str(init_trunc), ...
+%                ', max trunc = ', num2str(max_trunc)]); % add title to figure for reference frame number.
+% 
+%         % frame_num_double = double(frame_num); % this conversion is somehow needed for title.
+%         frame_num_double = double(frame_idx); % this conversion is somehow needed for title.
+% 
+%         % Convert frame_num to string.
+%         frame_str = ['Frame Number: ' num2str(frame_num_double)];
+% 
+%         frame_pick = getframe(gcf);
+% 
+%         writeVideo(writerObj, frame_pick);
+% 
+%         % frame_idx = frame_idx + 1; % to iterate through all frames in gamma all.
+% 
+%     end % END PLOTTING MOVIE
+% 
+% 
+%     % save movie to file
+%     % choose [yes/no] to save the movie to a .avi file.
+%     if saved==1
+%         save([movie_outstr, '.mat'], 'gamma_real', 'init_trunc', 'max_trunc', 'Mk', 'hz', 'xx', 'numz', 'texpmat' );
+%     end
+% 
+%     % close the video writer object
+%     close(writerObj);
+% 
+% end

@@ -1,21 +1,24 @@
 %===================================================================================================
-% This script runs the D-bar algorithm, calling the necessary functions to compute the approximate
-% scattering transform texp and solve the Dbar equation.
-% This is for ACT5 DATA using TRIG PATTERNS on a CIRCULAR DOMAIN. This code is set up to reconstruct
-% human data as difference images, by selecting one reference frame from a multiframe dataset. 
-
-% Note: this uses the transformed DN map, so general domain functionality could
-% be implemented by importing electrode positions from a boundary file, but this is not currently
-% done in this code. 
+% This script is used to find the (single) best reference frame for running
+% the D-bar algorithm. This reference frame will be used to reconstruct human data as diffence images.
 % 
-% Note: this code currently reconstructs a single image, using averages of both measured and
-% reference voltages. A loop over multiple frames exists, however, so it could be easily modified to
-% reconstruct multiple frames.
+% How the reference frame is chosen
+% - initialize the starting reference frame to be 10, as the first few frame measurements are always iffy.
+% - generate the conductivity distribution (gamma) for each frame using Dbar algorithm. 
+% - The best reference frame is chosen to be the gamma with the highest average conductivity.
+%
+% This has been used for ACT5 DATA using TRIG PATTERNS on a CIRCULAR
+% DOMAIN.
+% 
+% Note: this script calls the necessary functions to compute the approximate scattering
+% transform and texp and solve the Dbar equation (because we have to solve the Dbar algorithm to 
+% find this refframe, but we don't save anything for actual plotting / reconstructions)
 %
 % Note: this code is a little messy and could be cleaned up some, but it does seem to work fine
-
+%
 % Authors:                  Melody Alsaker, Jennifer Mueller, Peter Muller
-% Date Modified:            September 2024
+%                           Modifications made by Drew Fitzpatrick, Matthew Wong, and Lydia Lonzarich
+% Date Modified:            September 2025
 %
 %===================================================================================================
 
@@ -39,12 +42,12 @@ save_images_as_jpg_files = 0;
 datadir = 'ACT5_humanData/';
 
 % File name for .mat file containing EIT data 
-datafname = 'perf_chunk_Sbj02_2D_16e_24_10_16_12_38_03_93750';  
+datafname = 'modified_16x16_Sbj02_2D_16e_24_10_16_12_38_03_93750';  
 
 % targframe = 10;  % Frame we will reconstruct (target)
-refframe = 10;   % Reference frame (e.g. at max expiration)
-startframe = 11;
-endframe = 421;
+refframe = 2440;   % Reference frame (e.g. at max expiration)
+startframe = 2450;
+endframe = 2700;
 highest_cond = 0; 
 best_frame = 0;
 

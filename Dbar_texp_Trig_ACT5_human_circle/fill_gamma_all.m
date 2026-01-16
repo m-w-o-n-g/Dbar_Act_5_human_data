@@ -12,18 +12,28 @@
 % - manual truncation (no gaussian truncation)
 % - reference frame used: frame found in our "find-reference-frame" script.
 %
+% This code JUST meant to compute the conductivity distribution (gamma) for each frame in a 
+% multiframe dataset, and add the real component of each to a matrix called gamma_all. 
+%
+% Plotting Reconstructions:
+% - option to plot INDIVIDUAL frames (individual gammas) by setting
+%   'display_images_to_screen' = 1
+%
 % Note: this uses the transformed DN map, so general domain functionality could
 % be implemented by importing electrode positions from a boundary file, but this is not currently
 % done in this code. 
-% 
-% Note: this code currently reconstructs a single image, using averages of both measured and
-% reference voltages. A loop over multiple frames exists, however, so it could be easily modified to
-% reconstruct multiple frames.
 %
 % Note: this code is a little messy and could be cleaned up some, but it does seem to work fine
-
+%
 % Authors:          Melody Alsaker, Jennifer Mueller, Peter Muller
 %                   Modifications made by Drew Fitzpatrick, Lydia Lonzarich, and Matthew Wong
+% Date Modified:    December 2025
+%
+% Edits made in 2025...
+% Editor:           Lydia Lonzarich
+% Edits made:       separated 'generate gamma for each frame + option to
+%                   plot individual frames' and 'generate movie reconstruction' logic into
+%                   two separate scripts
 % Date Modified:    December 2025
 %
 %===================================================================================================
@@ -40,8 +50,10 @@ timestart = tic;
 save_dbar_output_as_mat_file = 0;
 display_images_to_screen = 1;
 save_images_as_jpg_files = 0;
-plot_movie = 0;
-saved = 0;
+save_gam_real_as_mat_file = 0;
+% plot_movie = 0;
+% saved = 1;
+
 
 %===================================================================================================
 %======================================== Specify External Data ====================================
@@ -51,10 +63,12 @@ datadir = 'ACT5_humanData/';
 
 % File name of .mat file containing EIT data.
 % datafname = 'modified_16x16_Sbj02_2D_16e_24_10_16_12_38_03_93750';
-datafname = 'Sbj001_93kHz_vent_24_10_15_10_51_57_1';
+datafname = 'Sbj001_93kHz_perf_24_10_15_11_05_09_1';
 
 % Directory for the program output to be saved to. If it doesn't exist, we'll create it later.
-outdir = 'HumanRecons';
+output_directory = [];
+outdir = 'gammas/';
+out_fname = 'jan14_1930_gamma_cond_distributions_09_1.mat';
 
 
 % ==================================================================================================
@@ -110,6 +124,7 @@ load([datadir, datafname])
 % START OF MAIN FOR-LOOP (the dbar algorithm)
 % Iterate over all frames in dataset (MINUS reference frames) and fill gamma_all with frame reconstructions. 
 for frame = all_frames
+    disp("frame: " + frame)
 
 
     % Voltages (use these to derive DN map)
@@ -676,7 +691,6 @@ for frame = all_frames
     
     % Make each conductivity distribution into a matrix, one for each image.
     gamma = reshape(gamma,num_frames,N,N);
-    % total_runtime = toc(timestart)
     
     gamma_real = real(gamma);
     
@@ -688,32 +702,49 @@ for frame = all_frames
     % for jj = 1:num_frames
     %     gamma_real(jj,:,:) = fliplr(squeeze(gamma_real(jj,:,:)));
     % end
-    
-    % Standardizing the colorbar for INDIVIDUAL image reconstruction.
-    % (1) comment / uncomment for more robust percentile method.
-    % all_vals = gamma_all(:);
-    % datamin = prctile(all_vals, 2);
-    % datamax = prctile(all_vals, 98);
 
-    % (2) comment / uncomment for og min/max method.
+    if ~exist(outdir, 'dir')
+        mkdir(outdir);
+    end
+
+    % % choose [yes/no] to save gamma conductivity reconstructions to a .mat file to make a movie with (in a separate script)
+    % if save_gam_real_as_mat_file == 1
+    %     save([outdir out_fname], 'gamma_all');
+    % end 
+    
+
+
+
+    % ==============================================================
+    % ==== Standardize Colorbar for Individual Frame Plots =========
+    % ==============================================================
+    % (option 1) og min/max method.
     frames_to_plot = 1:num_frames;
     datamin = min(min(min(gamma_real(frames_to_plot,:,:))));
     datamax = max(max(max(gamma_real(frames_to_plot,:,:))));
     datarange = datamax-datamin;
     
+    % (option 2) robust percentile method.
+    % all_vals = gamma_all(:);
+    % datamin = prctile(all_vals, 2);
+    % datamax = prctile(all_vals, 98);
+    
+    
     
     % ==================================================================================================
     % ============================== Set Up the Output Directory and Filename for Each Frame ===========
     % ==================================================================================================
-    if ~exist(outdir, 'dir')
-           mkdir(outdir)        
-    end
+    % if ~exist(outdir, 'dir')
+    %        mkdir(outdir)        
+    % end
+    % 
+    % outstr = [outdir, '/', datafname, '_R', num2str(init_trunc),'_',  num2str(max_trunc), '_Mk', num2str(Mk), '_recontime_', timeStampstr]; 
     
-    outstr = [outdir, '/', datafname, '_R', num2str(init_trunc),'_',  num2str(max_trunc), '_Mk', num2str(Mk), '_recontime_', timeStampstr]; 
     
-    
+
+
     % ==================================================================================================
-    % ================================= Plot and Save Individual Image Reconstruction ==================
+    % =================== Plot and Save Individual Image Reconstruction ================================
     % ==================================================================================================
     if(display_images_to_screen == 1 || save_images_as_jpg_files == 1 )
         for jj = frames_to_plot
@@ -728,8 +759,10 @@ for frame = all_frames
             colormap(cmap);
             
             % generate the pretty image reconstruction.
-            imagesc(xx,xx,flipud(squeeze(gamma_all(:,:,1))),[datamin, datamax]);
-            
+            % imagesc(xx,xx,flipud(squeeze(gamma_all(:,:,1))),[datamin, datamax]);
+            imagesc(xx,xx,flipud(squeeze(gamma_all(1,:,:))),[datamin, datamax]);
+
+
             set(gca, 'Ydir', 'normal');
             
             colorbar;
@@ -753,91 +786,16 @@ for frame = all_frames
     fclose('all');
 
 end % END MAIN FOR-LOOP ==> gamma_all has been completely filled with 'total_frames'-# of reconstructions.
+disp("All frames have now been reconstructed")
 
 
-%% 
+
 % ==================================================================================================
-% =================================== Create a Movie with the Image Reconstructions ================
+% =================== Save Gamma As A .mat File ====================================================
 % ==================================================================================================
-% set up movie output directories.
-movie_outdir = 'Dbar_human_recons_movies';                 % directory for the .avi recon movie file.
-movie_outFname = ['dec19_1652_short_Dbar_movie_', datafname];         % output filename for recon movie.
-movie_outstr = [movie_outdir, '/', movie_outFname];        % directory for the recon movie's corresponding .mat file. 
+% choose [yes/no] to save gamma conductivity reconstructions to a .mat file to make a movie with (in a separate script)
+if save_gam_real_as_mat_file == 1
+    save([outdir out_fname], 'gamma_all');
+end 
 
-% create the movie outdir if it doesn't exist.
-if ~exist(movie_outdir, 'dir')
-        mkdir(movie_outdir)
-end
-
-% create video writer object in the output directory.
-writerObj = VideoWriter([movie_outdir, '/', movie_outFname]);
-
-% set the frame rate to one frame per second
-set(writerObj,'FrameRate',5);
-
-% open the writer object.
-open(writerObj);
-
-% Standardizing the colorbar for image reconstruction MOVIE (two options below)...
-% (1) comment / uncomment for more robust percentile method.
-% all_vals = gamma_all(:);
-% cmin_gamma = prctile(all_vals, 2);
-% cmax_gamma = prctile(all_vals, 98);
-
-% (2) comment / uncomment for og min/max method.
-max_gamma_all = max(max(max(gamma_all)));
-min_gamma_all = min(min(min(gamma_all)));
-range_gamma = max_gamma_all - min_gamma_all;
-cmax_gamma = max_gamma_all - 0.2*range_gamma;
-cmin_gamma = min_gamma_all + 0.2*range_gamma;
-
-% initialize variable to keep track of the current frame # in the for-loop.
-frame_idx = 1; 
-
-
-% Plot movie
-% iterate over all frames (MINUS the reference frame)
-for frame_num = all_frames
-    % choose [yes/no] to display movie to screen.
-    if plot_movie == 1
-        figure('visible','on');
-    else
-        figure('Visible','off');
-    end
-
-    colormap(cmap)
-
-    % generate the pretty image reconstruction.
-    imagesc(flipud(gamma_all(:,:,frame_idx)))
-    
-    caxis([cmin_gamma,cmax_gamma])
-    colorbar
-    axis square
-    set(gca, 'Ydir', 'normal')
-
-    title(['Frame number = ',num2str(frame_num), ...
-           ', init trunc = ', num2str(init_trunc), ...
-           ', max trunc = ', num2str(max_trunc)]); % add title to figure for reference frame number.
-    
-    frame_num_double = double(frame_num); % this conversion is somehow needed for title.
-    
-    % Convert frame_num to string.
-    frame_str = ['Frame Number: ' num2str(frame_num_double)];
-        
-    frame_pick = getframe(gcf);
-    
-    writeVideo(writerObj, frame_pick);
-    
-    frame_idx = frame_idx + 1; % to iterate through all frames in gamma all.
-
-end % END PLOTTING MOVIE
-
-
-%% save movie to file
-% choose [yes/no] to save the movie to a .avi file.
-if saved==1
-    save([movie_outstr, '.mat'], 'gamma_real', 'init_trunc', 'max_trunc', 'Mk', 'hz', 'xx', 'numz',  'refframe', 'texpmat' );
-end
-
-% close the video writer object
-close(writerObj);
+disp("gamma_all has been saved into a .mat file")
