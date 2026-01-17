@@ -1,18 +1,44 @@
-
-%==========================================================================
-% This script runs the Dbar algorithm, calling the necessary functions to
-% compute the approx scattering transform texp and solve the Dbar equation.
-% This is for HUMAN DATA using TRIG PATTERNS on a GENERAL DOMAIN.
+%===================================================================================================
+% This script runs the D-bar algorithm, calling the necessary functions to compute the approximate 
+% scattering transform texp and solve the Dbar equation
 %
-% Authors:                  Melody Alsaker, Jennifer Mueller, Peter Muller
-% Date Modified:            April 2019
+% This code is set up to reconstruct human data as difference images by selecting one reference
+% frame from a multiframe dataset. 
 %
-% Edits made in 2025
+% This is for…
+% - ACT5 human data
+% - circular domain
+% - trig patterns
+% - Gaussian truncation
+% - reference frame used: ONE frame found using our “find-best-refframe” script
+%
+% This code JUST meant to compute the conductivity distribution (gamma) for each frame in a multiframe dataset, and adds the real component
+% of each to a matrix called gamma_all 
+%
+% Plotting Reconstructions:
+% - option to plot INDIVIDUAL frames (individual gammas) by setting
+%   'display_images_to_screen' = 1
+%
+% Note: this uses the transformed DN map, so general domain functionality could
+% be implemented by importing electrode positions from a boundary file, but this is not currently
+% done in this code. 
+%
+% Note: this code is a little messy and could be cleaned up some, but it does seem to work fine
+%
+% original...
+% Authors:          Melody Alsaker, Jennifer Mueller, Peter Muller
+% Date Modified:    
+%
+% Edits made in 2025...
 % Author: Sean Cowan
-% Edits: Added Gaussian truncation and removed intial truncation
-% Made code ready for ACT5 Human Data
+% Edits: - Added Gaussian truncation and removed intial truncation
+%        - Made code ready for ACT5 Human Data
 %
-%==========================================================================
+% Edits made in 2025...
+% Authors: Drew Fitzpatrick, Lydia Lonzarich, and Matthew Wong
+% Edits: Made code actually work with ACT5 human data.
+%
+%===================================================================================================
 
 % clear all
 % close all
@@ -41,12 +67,12 @@ save_gam_real_as_mat_file = 0;
 data_dir = 'ACT5_humanData/';
 
 % .mat file containing EIT data.
-data_fname = 'Sbj001_93kHz_vent_24_10_15_10_51_57_1';
+data_fname = 'perf_chunk_1_Sbj02_2D_16e_24_10_16_12_38_03_93750';
 
 % Directory for the program output to be saved to. If it doesn't exist, we'll create it later.
 output_directory = [];
 outdir = 'gammas/';
-out_fname = 'gamma_cond_distributions_57_1.mat';
+out_fname = 'jan15_831_gamma_cond_distributions_Sbj002_perfchunk1.mat';
 
 % File containing list of bdry pts and the directory where it is stored
 bdry_file = 'EllipseBdry_1_952p6mm.txt';
@@ -63,17 +89,18 @@ Perim = Perim_inches * 0.0254;  % Perimeter of boundary (meters).
 M = 32;                         % Size of k-grid for Fourier domain is MxM. Enter a power of 2.
                                 % M=16 is nice and fast. M=32 is more accurate. M=64 is super great but slowish
 
-hh = 0.015;                     % Spatial z-grid step size. This changes the number of pixels in your reconstruction.  Smaller value => finer mesh.
+hh = 0.02;                      % Spatial z-grid step size. This changes the number of pixels in your reconstruction.  Smaller value => finer mesh.
                                 % Choose 0.01 <= hh <= 0.065 for best results.
 
-ee = 0.3;                      % Used to compute width of Gaussian window in FT. Smaller = more truncation
+ee = 0.3;                       % Used to compute width of Gaussian window in FT. Smaller = more truncation
 
-% Specify a circular truncation region for the low-pass Fourier domain filter
-max_trunc = 4.8;         % Final max trunc radius. Choose something bigger
-
+max_trunc = 4.6;                  % Specify a circular truncation region for the low-pass Fourier domain filter.
+                                % This determines how much high-freq content we allow.
+                                % Final max trunc radius. Choose something bigger.
+                        
 % Truncates colorbar for display purposes. Enter an integer from 0 to 10.
 % If displaying a small number of images, choose something smaller.
-percent_to_truncate_colorbar = 0;
+percent_to_truncate_colorbar = 2;
 
 % Select colormap for figures
 cmap = 'jet';
@@ -85,9 +112,9 @@ L = 32;                  % Number of electrodes
 %===================================================================================================
 %======================================== Specify Reconstruction Parameters ========================
 %===================================================================================================
-ref_frame = 37;
-startframe = 100; 
-endframe = 105;
+ref_frame = 141;
+startframe = 140; 
+endframe = 140;
 % trg_frame = 96; % frame to reconstruct
 
 % determine the total # of frames to reconstruct (we must ignore the reference frame when it's in the range (startframe,endframe))
@@ -117,7 +144,8 @@ gamma_best = 300;
 
 % begin main for-loop (the dbar algorithm begins)
 % iterate over all frames in dataset (MINUS the reference frame)
-for frame = all_frames % NEED TO ADD AN END!!!
+for frame = all_frames 
+    disp("Frame: " + frame)
 
     % ============================ set up voltage matrices ==============================================
     load([data_dir, data_fname]);
@@ -229,7 +257,8 @@ for frame = all_frames % NEED TO ADD AN END!!!
     k = K1 + 1i*K2;                         % The set of all k-vals (matrix)
     numk = M*M;                             % Total number of k-vals
     
-    kidx_max = find(abs(k)<max_trunc & abs(k)>0.1); % Indices of k-vals in trunc area
+    % kidx_max = find(abs(k)<max_trunc & abs(k)>0.1); % Indices of k-vals in trunc area
+    kidx_max = find(abs(k)<max_trunc & abs(k)>1e-6); % Indices of k-vals in trunc area
     ktrunc_max = k(kidx_max);
     numktrunc_max = numel(ktrunc_max);
     conjktrunc_max = conj(ktrunc_max);
@@ -667,13 +696,14 @@ for frame = all_frames % NEED TO ADD AN END!!!
         gamma(jj,zidx) = gammatemp;
         
     end % All images have now been processed.
+    disp("All images have now been processed")
     %======================================================================
     
     % Make each conductivity distribution into a matrix, one for each image.
     % gamma is 1 x 134 x 134 (num_frames=1, N=134) (1 is to specify that this gamma is just for 1 frame).
     gamma = reshape(gamma, num_frames, N, N); 
     
-    total_runtime = toc(timestart)
+    % total_runtime = toc(timestart)
     
     % save only the real part of gamma. gam_real is same size as gamma.
     gam_real = real(gamma);  
@@ -681,21 +711,20 @@ for frame = all_frames % NEED TO ADD AN END!!!
     % squeeze(gam_real) ==> 134 x 134 matrix (the conductivity distribution matrix for a single frame).
     % this is where we add the conductivity distribution (gamma) for the current frame to a matrix, in position 'frame_idx', to a matrix with the rest of the gammas. 
     % gamma_all size is 134 x 134 x num_frames
-    gamma_all(:, :, frame_idx) = squeeze(gam_real); 
+    gamma_all(:, :, frame_idx) = squeeze(gam_real); % JUST REMOVED 12/19/2025
     % gamma_all(:, :, frame_idx) = gam_real; 
-
 
     frame_idx = frame_idx + 1;
 
 
 
 
-    if frame_idx > 2  % only compare after at least 2 frames
-        prev_frame = gamma_all(:,:,frame_idx-2);
-        curr_frame = gamma_all(:,:,frame_idx-1);
-        max_diff = max(abs(curr_frame(:) - prev_frame(:)));
-        fprintf('Max difference between frame %d and %d: %.4f\n', frame_idx-2, frame_idx-1, max_diff);
-    end
+    % if frame_idx > 2  % only compare after at least 2 frames
+    %     prev_frame = gamma_all(:,:,frame_idx-2);
+    %     curr_frame = gamma_all(:,:,frame_idx-1);
+    %     max_diff = max(abs(curr_frame(:) - prev_frame(:)));
+    %     fprintf('Max difference between frame %d and %d: %.4f\n', frame_idx-2, frame_idx-1, max_diff);
+    % end
 
 
 
@@ -706,8 +735,6 @@ for frame = all_frames % NEED TO ADD AN END!!!
     %     gam_real(jj,:,:) = squeeze(gam_real(jj,:,:));
     % end
     
-    frames_to_plot = 1:num_frames;
-
     % select frame gamma conductivity reconstructions to save 
     % saved_gam_real = gam_real(:,:,frames_to_plot); 
 
@@ -715,17 +742,31 @@ for frame = all_frames % NEED TO ADD AN END!!!
         mkdir(outdir);
     end
 
-    % choose [yes/no] to save gamma conductivity reconstructions to a .mat file to make a movie with (in a separate script)
-    if save_gam_real_as_mat_file == 1
-        save([outdir out_fname], 'gamma_all');
-    end 
 
+
+    % ==============================================================
+    % ==== Standardize Colorbar for Individual Frame Plots =========
+    % ==============================================================
+    frames_to_plot = 1:num_frames;
+    
+    % (option 1) og min/max method.
     datamin = min(min(min(gam_real(frames_to_plot,:,:))));
     datamax = max(max(max(gam_real(frames_to_plot,:,:))));
     datarange = datamax-datamin;
-    colorbartrunc = percent_to_truncate_colorbar * .01;
+    
+    % (option 2) robust percentile method.
+    % all_vals = gamma_all(:);
+    % datamin = prctile(all_vals, 2);
+    % datamax = prctile(all_vals, 98);
+    
+    % JUST REMOVED 12/19...
+    % datamin = min(min(min(gam_real(frames_to_plot,:,:))));
+    % datamax = max(max(max(gam_real(frames_to_plot,:,:))));
+    % datarange = datamax-datamin;
+    % colorbartrunc = percent_to_truncate_colorbar * .01;
     % datamin = datamin + colorbartrunc * datarange; % comment out because percent_to_truncate_colorbar = 0, so this is basiclaly just datamin = datamin.
     % datamax = datamax - colorbartrunc * datarange;
+
     
     % ==================================================================================================
     % ================================= Plot Individual Image Reconstructions ==========================
@@ -733,8 +774,6 @@ for frame = all_frames % NEED TO ADD AN END!!!
     if display_images_to_screen == 1
         for jj = frames_to_plot
             h = figure; % create blank figure window
-
-
 
             % figure;
             % subplot(1,2,1);
@@ -745,19 +784,21 @@ for frame = all_frames % NEED TO ADD AN END!!!
             % imagesc(xx,xx, rot90(imag(gamma_all(:,:,jj))));
             % title('Imag Part');
 
-
-
-
-
             colormap(cmap);
     
             % generate the pretty image reconstruction
             % imagesc(xx,xx,rot90(squeeze(gam_real(jj,:,:))),[datamin, datamax]);
-            imagesc(xx, xx, rot90(squeeze(gamma_all(:,:,jj))), [datamin, datamax]) % use for datasets 1, 3, 5,
+            imagesc(xx, xx, rot90(squeeze(gamma_all(:,:,jj))), [datamin, datamax]) % use for datasets 1, 3, 5, JUST REMOVED 12/19.
             % imagesc(xx, xx, squeeze(gamma_all(:,:,jj)), [datamin, datamax]) % use for datasets 2
+            
+            % imagesc(xx,xx,flipud(squeeze(gamma_all(1,:,:))),[datamin, datamax]); % JUST ADDED 12/19
+
+            
             set(gca, 'Ydir', 'normal');
+            
+            colorbar;
             axis([-1 1 -1 1 ]);
-            axis off
+            % axis off
             axis square;
 
             title(['Frame number = ', num2str(frame), ', trunc radius = ', num2str(max_trunc), ', refframe = ', num2str(ref_frame), ', ee = ', num2str(ee)])
@@ -771,4 +812,18 @@ for frame = all_frames % NEED TO ADD AN END!!!
     
     fclose('all');
 
-end  % End main for-loop ==> gamma_all has been completely filled with 'total_frames'-# of reconstructions.
+end % END MAIN FOR-LOOP ==> gamma_all has been completely filled with 'total_frames'-# of reconstructions.
+disp("All frames have now been reconstructed")
+
+
+
+% ==================================================================================================
+% =================== Save Gamma As A .mat File ====================================================
+% ==================================================================================================
+% choose [yes/no] to save gamma conductivity reconstructions to a .mat file to make a movie with (in a separate script)
+if save_gam_real_as_mat_file == 1
+    save([outdir out_fname], 'gamma_all');
+end 
+
+disp("gamma_all has been saved into a .mat file")
+
