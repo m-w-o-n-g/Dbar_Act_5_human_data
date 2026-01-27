@@ -1,16 +1,16 @@
-function mid_systoles = find_mid_systoles(Vmulti_perf)
+function end_systoles = find_end_systoles(Vmulti_perf)
 %==========================================================================
-% This function finds the ventricular mid-systole frames in a multiframe 
+% This function finds the ventricular end-systole frames in a multiframe 
 % dataset.
 %
 % Author:              Lydia Lonzarich 
 % Date Modified:        December, 2025
 %
-% Inputs:   Vmulti_perf = the dataset frames that we want to find mid-systole
+% Inputs:   Vmulti_perf = the dataset frames that we want to find end-systole
 %                         locations in
 %                   
-% Outputs:  mid_systoles = the mid_systole indices (aka, the frames where
-%                          ventricular mid-systoles occur. 
+% Outputs:  end_systoles = the end_systole indices (aka, the frames where
+%                          ventricular end-systoles occur. 
 %
 % External files:       None                         
 %==========================================================================
@@ -32,11 +32,11 @@ cardiac_signal = detrend(cardiac_signal);
 % title('Extracted Cardiac Signal from EIT Voltages')
 
 % - peaks ~= systole, troughs = diastole
-% - more specifically, peaks correspond to full contraction which is exactly what mid-systole represents (b/n start and end of ventricular contraction).
+% - more specifically, peaks correspond to full contraction which is exactly what end-systole represents (b/n start and end of ventricular contraction).
 % - find peaks and the indices at which they occur
 [~, pks_indices] = findpeaks(cardiac_signal);
 % disp(pks_indices)
 
-% return the frames at which mid-systoles occur.
-mid_systoles = pks_indices;
+% return the frames at which end-systoles occur.
+end_systoles = pks_indices;
 
