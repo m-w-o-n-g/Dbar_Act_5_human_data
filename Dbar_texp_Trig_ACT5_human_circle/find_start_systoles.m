@@ -1,4 +1,4 @@
-function diastoles = find_diastole(Vmulti_perf)
+function start_systoles = find_start_systoles(Vmulti_perf)
 %==========================================================================
 % This function finds the ventricular mid-systole frames in a multiframe 
 % dataset.
@@ -31,13 +31,13 @@ figure;
 plot(cardiac_signal);
 title('Extracted Cardiac Signal from EIT Voltages')
 
-% - peaks ~= systole, troughs = diastole
-% - more specifically, peaks correspond to full contraction which is exactly what mid-systole represents (b/n start and end of ventricular contraction).
-% - find peaks and the indices at which they occur
-[~, pks_indices] = findpeaks(-cardiac_signal, 'MinPeakDistance', 10, 'MinPeakProminence', .001);
+% - peaks ~= end_systole, troughs = start-systole
+% - more specifically, troughs correspond to the start of cardiac contraction.
+% - find troughs and the indices at which they occur.
+[~, trough_indices] = findpeaks(-cardiac_signal, 'MinPeakDistance', 10, 'MinPeakProminence', .001);
 % disp("trough indices: ")
 % disp(pks_indices)
 
 % return the frames at which start-systoles occur.
-diastoles = pks_indices;
+start_systoles = trough_indices;
 

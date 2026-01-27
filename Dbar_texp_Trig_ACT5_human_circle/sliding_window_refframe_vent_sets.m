@@ -6,7 +6,7 @@
 % scattering transform texp and solve the Dbar equation
 %
 % This code is set up to reconstruct human data as difference images by selecting frames at 
-% which mid-diastole occur from a multiframe dataset.
+% which start-systoles occur from a multiframe dataset.
 %
 % This is for…
 % - ACT5 human data
@@ -114,7 +114,7 @@ Vmulti = Vmulti(active_elecs, active_elecs, :);   % 16 x 16 x 2843 (remove 0 vol
 Vmulti_perf = Vmulti(:,:,startframe:endframe);    % 16 x 16 x num_frames=261
 
 % extract troughs. These will be used as reference frames.
-troughs = find_diastole(Vmulti_perf);
+troughs = find_start_systoles(Vmulti_perf);
 disp("troughs:")
 disp(troughs) 
 

@@ -3,14 +3,14 @@
 % scattering transform texp and solve the Dbar equation
 %
 % This code is set up to reconstruct human data as difference images by selecting frames at 
-% which diastoles occur from a multiframe dataset.
+% which start-systoles occur from a multiframe dataset.
 %
 % This is for…
 % - ACT5 human data
 % - circular domain
 % - trig patterns
 % - Gaussian truncation
-% - reference frames used: frames at which diastoles occur in ECG signal.
+% - reference frames used: frames at which start-systoles occur in ECG signal.
 %
 % Plotting Reconstructions:
 % - option to plot ONE frame (one gamma) 
@@ -109,15 +109,15 @@ Vmulti = real(frame_voltage);                     % 32 x 32 x 2843 (raw voltage 
 Vmulti = Vmulti(active_elecs, active_elecs, :);   % 16 x 16 x 2843 (remove 0 voltage row)
 Vmulti_perf = Vmulti(:,:,startframe:endframe);    % 16 x 16 x num_frames=261
 
-% extract diastoles. These will be used as reference frames.
-diastoles = find_diastole(Vmulti_perf);
-disp(diastoles) % there are 26.
+% extract start-systoles. These will be used as reference frames.
+start_systoles = find_start_systoles(Vmulti_perf);
+disp(start_systoles) % there are 26.
 
 % "grab" all selected frames in the dataset.
 all_frames = startframe:endframe; % 261
 
-% remove the diastole frames from the list of frames to reconstruct.
-frames_to_reconstruct = setdiff(all_frames, diastoles);
+% remove the start_systole frames from the list of frames to reconstruct.
+frames_to_reconstruct = setdiff(all_frames, start_systoles);
 disp("number of frames to reconstruct: " + num2str(length(frames_to_reconstruct)))
 
 % initialize gamma_all for storing all frame reconstructions. 
@@ -127,39 +127,39 @@ total_frames = endframe - startframe + 1;
 gamma_all = NaN(N, N, total_frames); % used to be zeros
 
 % define the number of reference frames to be used.
-num_refframes = length(diastoles);
+num_refframes = length(start_systoles);
 
 
 %===================================================================================================
 %======================== Generate Reconstructions With the Dbar Algorithm =========================
 %===================================================================================================
 for cycle_idx = 1:num_refframes
-    curr_mid_systole = diastoles(cycle_idx);
-    disp("Current diastole: " + curr_mid_systole)
+    curr_start_systole = start_systoles(cycle_idx);
+    disp("Current start-systole: " + curr_start_systole)
     disp("Reference frame #: " + cycle_idx)
 
-    refframe = diastoles(cycle_idx);  % use the i-th diastole as the current iteration's reference frame.
+    refframe = start_systoles(cycle_idx);  % use the i-th start_systole as the current iteration's reference frame.
     % disp("refframe idx: " + refframe)
 
     Vref = Vmulti_perf(:,:,refframe);    % grab the reference frame's voltages.
     
     % define the frames to be used against the current iteration's reference frame.
     curr_frames = frames_to_reconstruct( ...
-        frames_to_reconstruct > diastoles(max(cycle_idx-1,1)) & ...
-        frames_to_reconstruct < diastoles(min(cycle_idx+1, end)) );
+        frames_to_reconstruct > start_systoles(max(cycle_idx-1,1)) & ...
+        frames_to_reconstruct < start_systoles(min(cycle_idx+1, end)) );
 
     num_frames = length(curr_frames);
     disp("num frames: " + num_frames)
 
-    % % reconstruct frames around the current diastole: 5 before diastole --> 5 after diastole
+    % % reconstruct frames around the current start_systole: 5 before start_systole --> 5 after start_systole
     % % disp("all frames: " + all_frames)
     % % disp("startframe: " + startframe)
-    % % disp("curr mid systole: " + curr_mid_systole)
-    % frames_to_reconstruct = find(all_frames >= startframe & all_frames <= curr_mid_systole + 5);
+    % % disp("curr start systole: " + curr_start_systole)
+    % frames_to_reconstruct = find(all_frames >= startframe & all_frames <= curr_start_systole + 5);
     % disp("number of frames to reconstruct: " + length(frames_to_reconstruct))
     % 
     % % increment the starting frame for next iteration
-    % startframe = curr_mid_systole + 5;
+    % startframe = curr_start_systole + 5;
 
 
     % START OF DBAR ALGORITHM
@@ -859,7 +859,7 @@ if save_movie == 1
 % ==================================================================================================
     % set up movie output directories.
     movie_outdir = 'Dbar_human_recons_movies';                 % directory for the .avi recon movie file.
-    movie_outFname = ['TESTING_short_Dbar_movie_refframe=diastole_frames1500_1700_colorflip', datafname];         % output filename for recon movie.
+    movie_outFname = ['TESTING_short_Dbar_movie_refframe=start_systole_frames1500_1700_colorflip', datafname];         % output filename for recon movie.
     movie_outstr = [movie_outdir, '/', movie_outFname];        % directory for the recon movie's corresponding .mat file. 
     
     % create the movie outdir if it doesn't exist.

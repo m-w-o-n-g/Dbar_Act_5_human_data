@@ -88,7 +88,7 @@ Vmulti = Vmulti(:,:,startframe:endframe);
 % Extract reference frames
 % 1 breathing cycle = trough-->trough, so we want to extract the frames of the trough locations (the frames at which systoles start).
 % troughs = find_start_systoles(Vmulti);
-troughs = find_diastole(Vmulti);
+troughs = find_start_systoles(Vmulti);
 disp(troughs)
 
 % grab all selected frames in the dataset.
