@@ -1,21 +1,25 @@
 %===================================================================================================
-% This script runs the D-bar algorithm, calling the necessary functions to compute the approximate
-% scattering transform texp and solve the Dbar equation.
-% This is for ACT5 DATA using TRIG PATTERNS on a CIRCULAR DOMAIN. This code is set up to reconstruct
-% human data as difference images, by selecting one reference frame from a multiframe dataset. 
-
-% Note: this uses the transformed DN map, so general domain functionality could
-% be implemented by importing electrode positions from a boundary file, but this is not currently
-% done in this code. 
+% This script runs the D-bar algorithm, calling the necessary functions to compute the approximate 
+% scattering transform texp and solve the Dbar equation. 
 % 
-% Note: this code currently reconstructs a single image, using averages of both measured and
-% reference voltages. A loop over multiple frames exists, however, so it could be easily modified to
-% reconstruct multiple frames.
+% This code is set up to reconstruct human data as difference images by computing the average 
+% voltage matrix across all frames in a  multiframe dataset. 
+%
+% This is for…
+% - ACT5 human data
+% - circular domain
+% - trig patterns
+% - manual truncation (no gaussian truncation)
+% - Reference frame used: the average voltage matrix across all frames in a multiframe dataset.
+%
+% Plotting Reconstructions:
+% - option to plot ONE frame (one gamma)
+% - option to plot movie (iterate over all gammas in gamma_all)
 %
 % Note: this code is a little messy and could be cleaned up some, but it does seem to work fine
-
-% Authors:                  Melody Alsaker, Jennifer Mueller, Peter Muller
-% Date Modified:            October 2025
+%
+% Authors:              Lydia Lonzarich
+% Date Modified:        December 17, 2025
 %
 %===================================================================================================
 
@@ -58,8 +62,8 @@ hz = 0.02;              % z-grid step size used to create the z grid (xx=-1:hz:1
 %======================================== Specify Reconstruction Parameters ========================
 %===================================================================================================
 % refframe = 2435; % Reference frame (e.g. at max expiration)
-startframe = 2370;    
-endframe = 2843;   
+startframe = 2440;    
+endframe = 2782;   
 
 % determine the total # of frames to reconstruct (we must ignore the reference frame when it's in the range (startframe,endframe))
 % if refframe >= startframe & refframe <= endframe
@@ -78,7 +82,7 @@ frame_idx = 1; % initialize the main for-loop indexing variable to 1.
   
 % "grab" all frames in the dataset (MINUS the reference frame).
 all_frames = startframe:endframe;
-all_frames(all_frames == refframe) = []; % remove refframe index from the list of frames (that we'll iterate over).
+% all_frames(all_frames == refframe) = []; % remove refframe index from the list of frames (that we'll iterate over).
 
 gamma_best = 300;
 
@@ -88,11 +92,40 @@ init_trunc = 3.4;       % Initial trunc. radius. Used to trunc scattering transf
 max_trunc = 4;        % Final max trunc. radius. Used to trunc scattering transform. Choose something bigger
 
 
+
 %===================================================================================================
 %======================== Load and Extract External Data & Physical Parameters =====================
 %===================================================================================================
 % Load measured data. We will pull various physical parameters from this.  
 load([datadir, datafname])
+
+% trim voltage matrix data. (new)
+Vmulti = real(frame_voltage);        % 16 x 16 x 2843 (raw voltage matrix)
+Vmulti = Vmulti(1:15,:,:);           % 15 x 16 x 2843 (remove 0 voltage row)
+Vmulti = permute(Vmulti, [2, 1, 3]); % 16 x 15 x 2843 (permute voltage matrix ==> electrodes x patterns x num_frames (TOTAL)).
+Vmulti_perf = Vmulti(:,:,startframe:endframe); % 16 x 15 x num_frames (DEFINED)
+Vref = mean(Vmulti_perf, 3);                   % 16 x 15 (each entry an electrode's avg measurement across all frames)
+
+
+% Normalize the entries so that the voltages sum to zero in each col.
+% Vref = Vref(1:numCP,:)'; 
+Vref = Vref.';                   % transpose Vref ==> 15 x 16 x num_frames (electrodes x curr_patterns x num_frames)
+% adj = sum(Vref)/L;
+adj = mean(Vref, 1);             % avg across the first dimension in Vref (rows)
+% Vref = Vref - adj(ones(L,1),:);
+Vref = Vref - repmat(adj, size(Vref, 1), 1);
+
+% refLambda = inv(Vref' * J); % DN map for the reference frame, size numCP x numCP
+refLambda = pinv(Vref * J); % DN map for the reference frame, size numCP x numCP
+
+% fourier transformed DN map
+refLhat1 = (A1-1i*B1)*refLambda(1:Ldiv2,1:Ldiv2)*(C1.'+1i*D1.');
+refLhat2 = (A1-1i*B1)*refLambda(1:Ldiv2,Ldiv2+1:numCP)*(C2.'+1i*D2.');
+refLhat3 = (A2-1i*B2)*refLambda(Ldiv2+1:numCP,1:Ldiv2)*(C1.'+1i*D1.');
+refLhat4 = (A2-1i*B2)*refLambda(Ldiv2+1:numCP,Ldiv2+1:numCP)*(C2.'+1i*D2.');
+
+refLhat = [refLhat1, refLhat2; refLhat3, refLhat4];
+
 
 
 %===================================================================================================
@@ -103,10 +136,10 @@ load([datadir, datafname])
 for frame = all_frames
 
     % Voltages (use these to derive DN map)
-    Vmulti = real(frame_voltage);                  % Voltages for all frames in .mat file. frame_voltage is a 3D matrix: row x column x num_frames
-    Vmulti_perf = Vmulti(:,:,startframe:endframe); % Voltages for just the perf chunk of the .mat file. Each slice of Vmulti (Vmulti(:,:,k)) is a full set of measured voltages for frame k.
+    % Vmulti = real(frame_voltage);                  % Voltages for all frames in .mat file. frame_voltage is a 3D matrix: row x column x num_frames
+    % Vmulti_perf = Vmulti(:,:,startframe:endframe);   % Voltages for just the perf chunk of the .mat file. Each slice of Vmulti (Vmulti(:,:,k)) is a full set of measured voltages for frame k.
     V = Vmulti(:,:,frame);                         % Target frame voltage matrix. Selecting the measured voltage at 'frame' index.
-    Vref = mean(Vmulti_perf, 3);                   % Reference frame voltage matrix. Found by taking an avg of the 3 entry of the 
+    % Vref = mean(Vmulti_perf, 3);                     % Reference frame voltage matrix. Found by taking an avg of the 3rd entry of the voltage matrix
 
     % Current pattern matrix (unnormalized and including all columns) (use these to derive DN map)
     J0 = cur_pattern; 
@@ -274,20 +307,20 @@ for frame = all_frames
     
     %================ Construct DN matrix for reference data ==================
     
-    % Normalize the entries so that the voltages sum to zero in each col.
-    Vref = Vref(1:numCP,:)'; 
-    adj = sum(Vref)/L;
-    Vref = Vref - adj(ones(L,1),:);
-    
-    
-    refLambda = inv(Vref' * J);           % DN map for the reference frame, size numCP x numCP
-    
-    refLhat1 = (A1-1i*B1)*refLambda(1:Ldiv2,1:Ldiv2)*(C1.'+1i*D1.');
-    refLhat2 = (A1-1i*B1)*refLambda(1:Ldiv2,Ldiv2+1:numCP)*(C2.'+1i*D2.');
-    refLhat3 = (A2-1i*B2)*refLambda(Ldiv2+1:numCP,1:Ldiv2)*(C1.'+1i*D1.');
-    refLhat4 = (A2-1i*B2)*refLambda(Ldiv2+1:numCP,Ldiv2+1:numCP)*(C2.'+1i*D2.');
-    
-    refLhat = [refLhat1, refLhat2; refLhat3, refLhat4];
+    % % Normalize the entries so that the voltages sum to zero in each col.
+    % Vref = Vref(1:numCP,:)'; 
+    % adj = sum(Vref)/L;
+    % Vref = Vref - adj(ones(L,1),:);
+    % 
+    % 
+    % refLambda = inv(Vref' * J);           % DN map for the reference frame, size numCP x numCP
+    % 
+    % refLhat1 = (A1-1i*B1)*refLambda(1:Ldiv2,1:Ldiv2)*(C1.'+1i*D1.');
+    % refLhat2 = (A1-1i*B1)*refLambda(1:Ldiv2,Ldiv2+1:numCP)*(C2.'+1i*D2.');
+    % refLhat3 = (A2-1i*B2)*refLambda(Ldiv2+1:numCP,1:Ldiv2)*(C1.'+1i*D1.');
+    % refLhat4 = (A2-1i*B2)*refLambda(Ldiv2+1:numCP,Ldiv2+1:numCP)*(C2.'+1i*D2.');
+    % 
+    % refLhat = [refLhat1, refLhat2; refLhat3, refLhat4];
     
     %======Loop through all data sets, reconstruct conductivity for each ======
     
@@ -301,10 +334,14 @@ for frame = all_frames
         
         
         % Normalize the entries so that the voltages sum to zero in each col.
-        V = V(1:numCP,:)'; 
-        adj = sum(V)/L;
-        V = V - adj(ones(L,1),:);
-        Lambda = inv(V' * J);   % DN map for the measured frame
+        % V = V(1:numCP,:)'; % V starts as 16x15 ==> 15x15 because numCP is 15.
+        V = V(:,:); % V starts as 16x15 ==> 15x15 because numCP is 15
+        % adj = sum(V)/L;
+        % V = V - adj(ones(L,1),:);
+        V = V - mean(V, 1); % normalize frame
+        Lambda = pinv(V' * J);   % DN map for the measured frame
+        Vref = Vref.';
+        disp(size(Vref))
         
         Lhat1 = (A1-1i*B1)*Lambda(1:Ldiv2,1:Ldiv2)*(C1.'+1i*D1.');
         Lhat2 = (A1-1i*B1)*Lambda(1:Ldiv2,Ldiv2+1:numCP)*(C2.'+1i*D2.');
@@ -744,7 +781,7 @@ end % END MAIN FOR-LOOP ==> gamma_all has been completely filled with 'total_fra
 % ==================================================================================================
 % set up movie output directories.
 movie_outdir = 'Dbar_human_recons_movies';                 % directory for the .avi recon movie file.
-movie_outFname = ['short_Dbar_movie_perf_avg_refframe', datafname];         % output filename for recon movie.
+movie_outFname = ['TESTING_short_Dbar_movie_perf_avg_refframe', datafname];         % output filename for recon movie.
 movie_outstr = [movie_outdir, '/', movie_outFname];        % directory for the recon movie's corresponding .mat file. 
 
 % create the movie outdir if it doesn't exist.
@@ -813,7 +850,7 @@ end % END PLOTTING MOVIE
 %% save movie to file
 % choose [yes/no] to save the movie to a .avi file.
 if saved==1
-    save([movie_outstr, '.mat'], 'gamma_real', 'init_trunc', 'max_trunc', 'Mk', 'hz', 'xx', 'numz',  'refframe', 'texpmat' );
+    save([movie_outstr, '.mat'], 'gamma_real', 'init_trunc', 'max_trunc', 'Mk', 'hz', 'xx', 'numz', 'texpmat' );
 end
 
 % close the video writer object

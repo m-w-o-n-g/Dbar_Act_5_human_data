@@ -1,12 +1,10 @@
-% for no-gauss trunc
-
 %===================================================================================================
 % This script runs the D-bar algorithm, calling the necessary functions to compute the approximate 
 % scattering transform texp and solve the Dbar equation
 %
 % This code is set up to reconstruct and plot 1 human data frame as a difference
-% image by selecting a frame at which a mid-systole occurs as the reference
-% frame.
+% image by selecting a frame at which a physiological cardiac event (e.g., mid-systole, mid-diastole)
+% occurs as the reference frame.
 %
 % Note: fill_gamma_all.m can also reconstruct and plot single frames, but
 % the reference frame used in that script is the frame with the highest
