@@ -1,32 +1,34 @@
+% finding the frame with the frame with the highest avg conductivity in the previous breathing cycle. 
+
 %===================================================================================================
-% This script runs the D-bar algorithm, calling the necessary functions to compute the approximate 
-% scattering transform texp and solve the Dbar equation
+% This script is used to find the best reference frames for running
+% the D-bar algorithm for ventilation sets against sliding-window reference frames. These reference 
+% frame will be used to reconstruct human data as diffence images.
 %
-% This code is set up to reconstruct human data as difference images by selecting frames at 
-% which diastoles occur from a multiframe dataset.
+% How the reference frame is chosen
+% - initialize the starting reference frame to be 10, as the first few frame measurements are always iffy.
+% - generate the conductivity distribution (gamma) for each frame using Dbar algorithm. 
+% - The best reference frame is chosen to be the gamma with the highest average conductivity.
 %
-% This is for…
-% - ACT5 human data
-% - circular domain
-% - trig patterns
-% - Gaussian truncation
-% - reference frames used: frames at which diastoles occur in ECG signal.
-%
-% Plotting Reconstructions:
-% - option to plot ONE frame (one gamma) 
-% - option to plot movie (iterate over all gammas in gamma_all)
+% This has been used for ACT5 DATA using TRIG PATTERNS on a CIRCULAR
+% DOMAIN.
+% 
+% Note: this script calls the necessary functions to compute the approximate scattering
+% transform and texp and solve the Dbar equation (because we have to solve the Dbar algorithm to 
+% find this refframe, but we don't save anything for actual plotting / reconstructions)
 %
 % Note: this code is a little messy and could be cleaned up some, but it does seem to work fine
 %
-% Authors:              Lydia Lonzarich
-% Date Modified:        January 16, 2025
+% Authors:                  Melody Alsaker, Jennifer Mueller, Peter Muller
+%                           Modifications made by Drew Fitzpatrick, Matthew Wong, and Lydia Lonzarich
+% Date Modified:            September 2025
 %
 %===================================================================================================
 
 % clear 
 % close all
 timeStampstr = strrep(strrep(datestr(now,0),' ', '-'), ':', '-');  % Create timestamp string
-timestart = tic; 
+timestart = tic;
 
 
 % ==================================================================================================
@@ -35,9 +37,6 @@ timestart = tic;
 save_dbar_output_as_mat_file = 0;
 display_images_to_screen = 0;
 save_images_as_jpg_files = 0;
-plot_movie = 0;
-saved = 0;
-save_movie = 1;
 
 %===================================================================================================
 %======================================== Specify External Data ====================================
@@ -45,58 +44,36 @@ save_movie = 1;
 % Directory where data is stored:
 datadir = 'ACT5_humanData/';
 
-% File name of .mat file containing EIT data.
-% datafname = 'modified_16x16_Sbj02_2D_16e_24_10_16_12_38_03_93750';
-datafname = 'Sbj001_93kHz_perf_24_10_15_11_05_09_1';
+% File name for .mat file containing EIT data 
+datafname = 'Sbj001_93kHz_vent_24_10_15_10_51_57_1';  
 
-% Directory for the program output to be saved to. If it doesn't exist, we'll create it later.
-outdir = 'HumanRecons';
-
+% Directory where program output will be saved. If it doesn't exist, we'll create it
+outdir = 'humanRecons';
 
 % ==================================================================================================
 % ================================ Specify Mesh Size Parameters  ===================================
 % ==================================================================================================
-Mk = 8;                % Size of k-grid is Mk x Mk
-hz = 0.06;              % z-grid step size used to create the z grid (xx=-1:hz:1). Smaller value => finer mesh.
 
+Mk = 8;                 % Size of k-grid is Mk x Mk. 
+hz = 0.07;               % z-grid step size. Smaller value => finer mesh.
 
-%===================================================================================================
-%======================================== Specify Reconstruction Parameters ========================
-%===================================================================================================
-startframe = 1;    
-endframe = 201;
+startframe = 1;
+endframe = 500;
 
-% determine the total # of frames to reconstruct (we must ignore the reference frame when it's in the range (startframe,endframe))
-% if refframe >= startframe & refframe <= endframe
-%     total_reconstruct_frames = endframe - startframe;
-% else
-%     total_reconstruct_frames = endframe - startframe + 1;
-% end
-% all_frames = endframe - startframe + 1;
-% 
-% % "grab" all selected frames in the dataset.
-% all_frames = startframe:endframe;
-% 
-% % initialize gamma_all for storing all frame reconstructions. 
-% xx = -1:hz:1;
-% N = numel(xx);
-% gamma_all = zeros(N, N, all_frames);
-% 
-% frame_idx = 1; % initialize the main for-loop indexing variable to 1.
-% 
-% % "grab" all selected frames in the dataset.
-% % all_frames = startframe:endframe; % 261
+highest_cond_per_cycle = -Inf(1, num_refframes);
+best_frames_per_cycle = zeros(1, num_refframes);
+% highest_cond = 0; 
+% best_frame = 0;
 
 gamma_best = 300;
 
-cmap = 'jet';             % Select colormap for figures
+% Select colormap for figures
+cmap = 'jet';
 
-init_trunc = 3.6;         % Initial trunc. radius. Used to trunc scattering transform. Choose something smallish
-max_trunc = 4.2;          % Final max trunc. radius. Used to trunc scattering transform. Choose something bigger
+init_trunc = 4.1;        % Initial trunc. radius. Choose something smallish
+max_trunc = 4.6;         % Final max trunc. radius. Choose something bigger
 
-global_frame_idx = 1;     % to count the reconstructed frames?
 
-active_elecs = 1:32; % because current is only applied to electrodes 1-16, according to Jennifer.
 
 %===================================================================================================
 %======================== Load and Extract External Data & Physical Parameters =====================
@@ -104,121 +81,97 @@ active_elecs = 1:32; % because current is only applied to electrodes 1-16, accor
 % Load measured data. We will pull various physical parameters from this.  
 load([datadir, datafname])
 
-% trim voltage measurement .mat files.
-Vmulti = real(frame_voltage);                     % 32 x 32 x 2843 (raw voltage matrix)
-Vmulti = Vmulti(active_elecs, active_elecs, :);   % 16 x 16 x 2843 (remove 0 voltage row)
-Vmulti_perf = Vmulti(:,:,startframe:endframe);    % 16 x 16 x num_frames=261
+% trim voltage measurement .mat file
+Vmulti = real(frame_voltage);
+Vmulti = Vmulti(:,:,startframe:endframe);
 
-% extract diastoles. These will be used as reference frames.
-diastoles = find_diastole(Vmulti_perf);
-disp(diastoles) % there are 26.
+% Extract reference frames
+% 1 breathing cycle = trough-->trough, so we want to extract the frames of the trough locations (the frames at which systoles start).
+% troughs = find_start_systoles(Vmulti);
+troughs = find_diastole(Vmulti);
+disp(troughs)
 
-% "grab" all selected frames in the dataset.
-all_frames = startframe:endframe; % 261
+% grab all selected frames in the dataset.
+all_frames = startframe:endframe; 
 
-% remove the diastole frames from the list of frames to reconstruct.
-frames_to_reconstruct = setdiff(all_frames, diastoles);
-disp("number of frames to reconstruct: " + num2str(length(frames_to_reconstruct)))
+% remove trough frames from the list of all frames to reconstruct.
+frames_to_reconstruct = setdiff(all_frames, troughs);
+disp("Total number of frames available to reconstruct: " + num2str(frames_to_reconstruct))
 
-% initialize gamma_all for storing all frame reconstructions. 
-xx = -1:hz:1;
-N = numel(xx);
-total_frames = endframe - startframe + 1; 
-gamma_all = NaN(N, N, total_frames); % used to be zeros
+num_refframes = length(troughs);
+disp("There are " + num_refframes + " troughs")
 
-% define the number of reference frames to be used.
-num_refframes = length(diastoles);
 
 
 %===================================================================================================
 %======================== Generate Reconstructions With the Dbar Algorithm =========================
 %===================================================================================================
 for cycle_idx = 1:num_refframes
-    curr_mid_systole = diastoles(cycle_idx);
-    disp("Current diastole: " + curr_mid_systole)
-    disp("Reference frame #: " + cycle_idx)
 
-    refframe = diastoles(cycle_idx);  % use the i-th diastole as the current iteration's reference frame.
-    % disp("refframe idx: " + refframe)
+    curr_trough = troughs(cycle_idx);
+    % disp("Current trough: " + curr_trough)
 
-    Vref = Vmulti_perf(:,:,refframe);    % grab the reference frame's voltages.
-    
-    % define the frames to be used against the current iteration's reference frame.
-    curr_frames = frames_to_reconstruct( ...
-        frames_to_reconstruct > diastoles(max(cycle_idx-1,1)) & ...
-        frames_to_reconstruct < diastoles(min(cycle_idx+1, end)) );
+    refframe = troughs(cycle_idx);
+    % disp("Refframe of current iteration: " + refframe)
 
-    num_frames = length(curr_frames);
-    disp("num frames: " + num_frames)
+    Vref = Vmulti(:,:,refframe); % reference frame voltage
 
-    % % reconstruct frames around the current diastole: 5 before diastole --> 5 after diastole
-    % % disp("all frames: " + all_frames)
-    % % disp("startframe: " + startframe)
-    % % disp("curr mid systole: " + curr_mid_systole)
-    % frames_to_reconstruct = find(all_frames >= startframe & all_frames <= curr_mid_systole + 5);
-    % disp("number of frames to reconstruct: " + length(frames_to_reconstruct))
-    % 
-    % % increment the starting frame for next iteration
-    % startframe = curr_mid_systole + 5;
+    % define the frames to be reconstructed against the current iteration's reference frame.
+    if cycle_idx == 1
+        start_window = startframe;
+    else
+        start_window = troughs(cycle_idx-1);
+    end
+
+    if cycle_idx == num_refframes
+        end_window = endframe;
+    else
+        end_window = curr_trough;
+    end
+
+    % disp("Start window: " + start_window + " end window: " + end_window)
+    curr_frames = frames_to_reconstruct(frames_to_reconstruct >= start_window & ...
+                                        frames_to_reconstruct <= end_window);
+
+    num_frames = length(curr_frames); % the number of frames to reconstruct in this cycle iteration.
+    disp("Cycle " + cycle_idx + ": Reconstructing " + num_frames + " frames against reference frame: " + refframe)
 
 
-    % START OF DBAR ALGORITHM
-    % Iterate over all frames in dataset subset and fill gamma_all with frame reconstructions. 
-    % for frame = frames_to_reconstruct
+    % START OF DBAR ALGORITHM:
+    % iterate over each frame to be reconstructed against this cycle iteration's reference frame. 
     for frame = curr_frames
-    
-        V = Vmulti_perf(:,:,frame); % measured voltages for the current frame. 
-    
-        % % Voltages (use these to derive DN map)
-        % Vmulti = real(frame_voltage);   % Voltages for all frames in .mat file
-        % V = Vmulti(:,:,frame);          % Target frame voltage matrix. Selecting the measured voltage at 'frame' index
-        % Vref = Vmulti(:,:,refframe);    % Reference frame voltage matrix
-        
-        % Current pattern matrix (unnormalized and including all columns) (use these to derive DN map)
-        J0 = cur_pattern;
-        J0 = J0(active_elecs, active_elecs);
-        
+
+        V = Vmulti(:,:,frame); % measured voltages of current target frame
+
+        J0 = cur_pattern; 
+
         L = length(J0);    % Number of electrodes
         numCP = L-1;       % Number of linearly independent current patterns
-        
-        % L = 32;
-        % dtheta = 2*pi/L;
-        % theta = (dtheta:dtheta:2*pi)';
-        % currents = zeros(L,L-1);
-        % for j = 1:(L/2)
-        %    currents(:,j) = cos(j*theta);
-        % end
-        % for j = 1:(L/2)
-        %    currents(:,L/2+j) = sin(j*theta);
-        % end
-        % J0 = currents * current_amp;
-        
-        % Format of J0: Each column corresponds to a current pattern, as follows
-        % curr_amp * [ cos(theta), cos(2*theta), ... ,cos(16*theta), sin(theta), sin(2*theta), ..., sin(16*theta) ]; 
-        
+
         % extract electrode geometry params from the loaded .mat file to create circular domain.
-        eheight = elec_height; ewidth = elec_width;     % Electrode height, width (in meters)
-        perim = circumference * 0.0254;                 % Domain perimeter in meters (the variable circumference is loaded in inches)
-        dtheta = 2*pi/L;                                % We assume equal electrode spacing
-        etheta = dtheta:dtheta:2*pi;                    % Angular positions of electrode centers
-        eArea = eheight * ewidth;                       % Simple area of electrode (meters^2)
+        eheight = elec_height; ewidth = elec_width; % Electrode height, width (in meters)
+        perim = circumference * 0.0254; % Domain perimeter in meters (the variable circumference is loaded in inches)
+        dtheta = 2*pi/L;                        % We assume equal electrode spacing
+        etheta = dtheta:dtheta:2*pi;        % Angular positions of electrode centers
+        eArea = eheight * ewidth;         % Simple area of electrode (meters^2)
         
-        x_bdry = cos(etheta)'; y_bdry = sin(etheta)'; 
-        
-        
+        x_bdry = cos(etheta)'; y_bdry = sin(etheta)';
+
+
+
         %========================Set up numerical parameters=======================
         
         % Grid and computational parameters
-        s = max_trunc;          % trunc radius (to be used in k-grid)
+        s = max_trunc;
         h = 2*s/(Mk-1);         % k-grid step size
         
         Mdiv2 = Mk/2;
         Mtimes2 = 2*Mk;
-        
+
+
         %================ Set up Boundary Data and Arclength function==============
         
-        % store position of electrodes as Lx2 matrix.
-        coords = zeros(L,2);        
+        coords = zeros(L,2); 
         coords(:,1) = x_bdry;  coords(:,2) = y_bdry;
         
         % Get polygon data: geom = [ area   X_cen  Y_cen  perimeter ]
@@ -229,7 +182,7 @@ for cycle_idx = 1:num_refframes
         
         % Scale to match physical parameters
         domScaleFactor = perim / geom(4);
-        
+
         %x_bdry = x_bdry * domScaleFactor; y_bdry = y_bdry * domScaleFactor;
         
         %figure
@@ -250,27 +203,32 @@ for cycle_idx = 1:num_refframes
         %axis square
         %title('Scaled and rotated boundary shape')
         
-        Ldiv2 = floor(L/2);  % half hte number of electrodes. Note if L is odd, this means more sines than cosines
+        Ldiv2 = floor(L/2);  % Note if L is odd, this means more sines than cosines
         
         [A1,A2,B1,B2,C1,C2,D1,D2,theta,r_th,a,M_pts,rmax]=Fourier_coefficients_gen_MODIFIED(coords,perim,L,Ldiv2);
-        
-        
+
+
         %======================Set up computational grids==========================
         
         %..........................................................................
         % Construct mesh of z-values representing physical domain. We can throw out
         % z-values outside the domain; these will not be needed in the computation.
         %..........................................................................
+        xx = -1:hz:1;
+        N = numel(xx);
+        num = length(curr_frames);
+        % gamma_all = zeros(N, N, num);
+
         [z1,z2] = meshgrid(xx,xx);
         
         z = z1 + 1i*z2;
-        z = reshape(z,N*N,1);                       % Set of z-vals is now a vector
-        [IN, ON]=inpolygon(z1,z2,x_bdry,y_bdry);    % Find indices of z-vals in domain
-        zidx = find(IN + ON);                       % Indices of z-vals in domain
-        z = z(zidx);                                % Get rid of z-vals outside domain
-        numz = numel(zidx);                         % Number of in-domain z-vals
-        conjz = conj(z);                            % Complex conj of in-domain z-vals
-        
+        z = reshape(z,N*N,1);                   % Set of z-vals is now a vector
+        [IN, ON]=inpolygon(z1,z2,x_bdry,y_bdry); % Find indices of z-vals in domain
+        zidx = find(IN + ON);                   % Indices of z-vals in domain
+        z = z(zidx);                            % Get rid of z-vals outside domain
+        numz = numel(zidx);                     % Number of in-domain z-vals
+        conjz = conj(z);                        % Complex conj of in-domain z-vals
+
         %..........................................................................
         % Construct computational grid with M x M elements & complex variable k
         % We will need to eliminate the k-values outside the truncation radius and
@@ -279,26 +237,26 @@ for cycle_idx = 1:num_refframes
         %..........................................................................
         x = -s:h:s;
         [K1, K2] = meshgrid(x,x);
-        k = K1 + 1i*K2;                                     % The set of all k-vals (matrix)
-        numk = Mk*Mk;                                       % Total number of k-vals
+        k = K1 + 1i*K2;                         % The set of all k-vals (matrix)
+        numk = Mk*Mk;                             % Total number of k-vals
         
         kidx_init = find(abs(k)<init_trunc & abs(k)>0.1);
-        kidx_max = find(abs(k)<max_trunc & abs(k)>0.1);     % Indices of k-vals in trunc area
+        kidx_max = find(abs(k)<max_trunc & abs(k)>0.1); % Indices of k-vals in trunc area
         ktrunc_max = k(kidx_max);
         numktrunc_max = numel(ktrunc_max);
         conjktrunc_max = conj(ktrunc_max);
-        conjk = conj(k);                                    % conj of all k-vals (matrix)
+        conjk = conj(k);                        % conj of all k-vals (matrix)
         
         % The k-grid for the Green's function beta needs to be larger to accomodate
         % the convolution.
         xBig            = [-(s+((Mdiv2):-1:1)*h),x,s+(1:(Mdiv2))*h];
         [K1Big, K2Big]  = meshgrid(xBig,xBig);
         k_Big           = K1Big + 1i*K2Big;
-        
-        
+
+
         %======================Define Green's function beta========================
         
-        beta = h*h ./(pi * k_Big); % Mult by h^2 for when we compute the convolution
+        beta = h*h ./(pi * k_Big);   % Mult by h^2 for when we compute the convolution
         beta(Mk+1,Mk+1)=0;           % Set beta(0,0) = 0 to avoid singularity.
         
         % Take the fast fourier transform of the Green's function.
@@ -310,10 +268,9 @@ for cycle_idx = 1:num_refframes
         %======================= Construct Current Matrix J =======================
         J = J0(:,1:numCP); 
         for kk = 1:numCP
-         % J = J/norm(J(:,kk),2);
-            J(:,kk) = J(:,kk) / norm(J(:,kk), 2);
+         J = J/norm(J(:,kk),2);
         end
-        
+
         %============= Precompute some values necessary for Dbar eqn ==============
         
         %..........................................................................
@@ -339,31 +296,16 @@ for cycle_idx = 1:num_refframes
         
         
         % num_frames = 1;      % Number of frames to reconstruct
-        % num_frames = length(curr_frames);
-        
+
         %================ Construct DN matrix for reference data ==================
         
-        % % Normalize the entries so that the voltages sum to zero in each col.
-        % % Vref = Vref(1:numCP, :)';      % 16 x 15 ==> 
-        % Vref = Vref(:, 1:numCP);         % Vref was 16x15, but we want to keep only the 15 linearly independent current patterns while keeping all electrodes, so drop one col ==> 16 x 15.
-        % adj = sum(Vref)/L;               % 1 x 15
-        % % Vref = Vref - adj(ones(L,1),:);
-        % Vref = Vref - adj;               % 16 x 15 x num_frames (implicit expansion).
-        % Vref = Vref';                    % transpose Vref: 16 x 15 ==> 15 x 16
-        
-
-
-        % trying new stuff
-        Vref = Vref(1:numCP, :); % 16x16 ==> 15x16
-        Vref = Vref';            % 15x16 ==> 16x15
-        adj = sum(Vref)/L;       
+        % Normalize the entries so that the voltages sum to zero in each col.
+        Vref = Vref(1:numCP,:)'; 
+        adj = sum(Vref)/L;
         Vref = Vref - adj;
-        Vref = Vref';            % 16x15 ==> 15x16
-        % end of trying new stuff
-
-
-
-        refLambda = inv(Vref * J);       % DN map for the reference frame, size numCP x numCP
+        Vref = Vref';
+        
+        refLambda = inv(Vref * J);           % DN map, size numCP x numCP
         
         refLhat1 = (A1-1i*B1)*refLambda(1:Ldiv2,1:Ldiv2)*(C1.'+1i*D1.');
         refLhat2 = (A1-1i*B1)*refLambda(1:Ldiv2,Ldiv2+1:numCP)*(C2.'+1i*D2.');
@@ -371,7 +313,7 @@ for cycle_idx = 1:num_refframes
         refLhat4 = (A2-1i*B2)*refLambda(Ldiv2+1:numCP,Ldiv2+1:numCP)*(C2.'+1i*D2.');
         
         refLhat = [refLhat1, refLhat2; refLhat3, refLhat4];
-        
+
         %======Loop through all data sets, reconstruct conductivity for each ======
         
         % gamma is the conductivity we will reconstruct. Outside domain will be NaN
@@ -379,36 +321,18 @@ for cycle_idx = 1:num_refframes
         
         
         for jj = 1:num_frames
-            % disp("iteration: " + jj)
-            % V = Vmulti_perf(:,:,jj); 
-
             actual_frame = curr_frames(jj);
-            V = Vmulti_perf(:, :, actual_frame);
+            V = Vmulti(:,:,actual_frame);
             
             gammatemp = zeros(1,numz);
             %================= Construct DN matrix for measured data ==============
             
             
-            % % Normalize the entries so that the voltages sum to zero in each col.
-            % % V = V(1:numCP,:)'; 
-            % V = V(:, 1:numCP);          % 16 x 16 ==> 16 x 15
-            % adj = sum(V)/L;             % 1 x 15
-            % % V = V - adj(ones(L,1),:);
-            % V = V - adj;                % 16 x 15
-            % V = V';                     % 16 x 15 ==> 15 x 16
-
-
-
-            % new - trying stuff
-            V = V(1:numCP, :); % 16x16 ==> 15x16
-            V = V';            % 15x16 ==> 16x15
-            adj = sum(V)/L;       
+            % Normalize the entries so that the voltages sum to zero in each col.
+            V = V(1:numCP,:)'; 
+            adj = sum(V)/L;
             V = V - adj;
-            V = V';            % 16x15 ==> 15x16
-            % end of trying new stuff
-
-
-            Lambda = inv(V * J);   % DN map for the measured frame
+            Lambda = inv(V' * J);
             
             Lhat1 = (A1-1i*B1)*Lambda(1:Ldiv2,1:Ldiv2)*(C1.'+1i*D1.');
             Lhat2 = (A1-1i*B1)*Lambda(1:Ldiv2,Ldiv2+1:numCP)*(C2.'+1i*D2.');
@@ -417,7 +341,6 @@ for cycle_idx = 1:num_refframes
             Lhat = [Lhat1, Lhat2; Lhat3, Lhat4];
             
             dLambda = Lhat - refLhat; % transformed DN map, size numCP x numCP 
-            %dLambda = -(Lhat - refLhat); % transformed DN map, size numCP x numCP 
             %dLambda = Lambda - refLambda;
             
             %==================Compute approx. scattering transform================
@@ -432,7 +355,6 @@ for cycle_idx = 1:num_refframes
             sumj=zeros(size((1i*conjktrunc_max)));
             
             % Compute sums from Jutta's paper and Ethan's work
-            % looping over indices to compute sums from dlambda
             for j=1:L2-1
                 akbar_j=((1i*conjktrunc_max).^j)/factorial(j);
                 sumj=sumj+ak_L2.*akbar_j.*(dLambda(j,L2)+dLambda(L2+j,L2));
@@ -443,7 +365,7 @@ for cycle_idx = 1:num_refframes
                 end
             end
             texp(kidx_max)=sumjk+sqrt(2)*(sumk+sumj)+2*akbar_L2.*ak_L2.*dLambda(L2,L2);
-            
+    
             % Implement nonuniform truncation of scattering data
             max_real_texp = max(real(texp(kidx_init)));
             max_imag_texp = max(imag(texp(kidx_init)));
@@ -460,8 +382,10 @@ for cycle_idx = 1:num_refframes
             scaling_factor = rmax * dtheta / (eArea * gamma_best);
             texp = texp * scaling_factor; 
             
+            
             texpmat = reshape(texp,Mk,Mk);
             
+            % plot gamma real and gamma imag 
             % figure
             % subplot(1,2,1)
             % imagesc(real(texpmat))
@@ -480,7 +404,7 @@ for cycle_idx = 1:num_refframes
             
             % This is the pointwise multiplication operator used in the Dbar eqn.
             TR = repmat(reshape(texp,Mk,Mk),[1,1,numz]) .* EXP;
-            
+    
             %==========================Solve Dbar Equation=========================
             
             % Loop through all z values in domain
@@ -771,183 +695,107 @@ for cycle_idx = 1:num_refframes
         
         % Make each conductivity distribution into a matrix, one for each image.
         gamma = reshape(gamma,num_frames,N,N);
+        
         % total_runtime = toc(timestart)
         
         gamma_real = real(gamma);
-        
-        % gamma_all(:,:,global_frame_idx) = squeeze(gamma_real(jj,:,:));
-        % global_frame_idx = global_frame_idx + 1;
-
-        for jj = 1:num_frames
-            frame_for_gamma_all = curr_frames(jj);
-            gamma_all(:, :, frame_for_gamma_all) = squeeze(gamma_real(jj, :, :));
-            % gamma_all(:,:,global_frame_idx) = squeeze(gamma_real(jj,:,:));
-            % global_frame_idx = global_frame_idx + 1;
-        end
-        % gamma_all(:, :, global_frame_idx) = gamma_real;
-        % global_frame_idx = global_frame_idx + 1;
         
         % Switch to DICOM orientation
         % for jj = 1:num_frames
         %     gamma_real(jj,:,:) = fliplr(squeeze(gamma_real(jj,:,:)));
         % end
-        
+
+        % for jj = 1:num_frames
+        %     frame_for_gamma_all = curr_frames(jj);
+        %     gamma_all(:,:,frame_for_gamma_all) = squeeze(gamma_real(jj,:,:));
+        % end
+
         frames_to_plot = 1:num_frames;
         datamin = min(min(min(gamma_real(frames_to_plot,:,:))));
         datamax = max(max(max(gamma_real(frames_to_plot,:,:))));
         datarange = datamax-datamin;
-        
-        
+
+
         % ==================================================================================================
-        % ============================== Set Up the Output Directory and Filename for Each Frame ===========
+        % ===================================== Set up Output Directory ====================================
         % ==================================================================================================
         if ~exist(outdir, 'dir')
                mkdir(outdir)        
         end
         
         outstr = [outdir, '/', datafname, '_R', num2str(init_trunc),'_',  num2str(max_trunc), '_Mk', num2str(Mk), '_recontime_', timeStampstr]; 
-        
-        
+
         % ==================================================================================================
-        % ================================= Plot and Save Individual Image Reconstruction ==================
+        % ======================================== Plot and Save Individual Images =========================
         % ==================================================================================================
+        
         if(display_images_to_screen == 1 || save_images_as_jpg_files == 1 )
             for jj = frames_to_plot
                 
-                % choose [yes/no] to display individual image reconstruction images to screen.
+                % choose [yes/no] to display individual image reconstruction plots to screen
                 if( display_images_to_screen == 1 )
-                    h = figure;                    % create a blank figure window.
+                    h = figure;                    % create a blank figure window
                 else
-                    h = figure('visible', 'off');  % Suppress display to screen.
+                    h = figure('visible', 'off');  % Suppress display to screen
                 end
-                
-                colormap(cmap);
-                
-                % generate the pretty image reconstruction.
-                imagesc(xx,xx,flipud(squeeze(gamma_all(:,:,1))),[datamin, datamax]);
-                
+        
+                colormap(cmap); 
+        
+                % generate pretty reconstruction
+                imagesc(xx,xx,fliplr(squeeze(gamma_real(jj,:,:))),[datamin, datamax]);
                 set(gca, 'Ydir', 'normal');
                 
                 colorbar;
                 axis([-1 1 -1 1 ]);
                 axis square;
                 
-                title(['Frame number = ',num2str(frame), ', init trunc = ', num2str(init_trunc), ', max trunc = ', num2str(max_trunc), ', refframe = ', num2str(refframe)]); % add title to figure for reference frame number.
+                title(['Frame number = ',num2str(frame)]); % add title to figure for reference frame number
                 
-                % choose [yes/no] to save image individual reconstruction image as a .jpg file.
+                % choose [yes/no] to save image individual reconstruction plots as individual .jpg files.
                 if( save_images_as_jpg_files == 1)
                     print(h,'-djpeg', [outstr '.jpg']);
                 end
             end
         end
         
-        % choose [yes/no] to save a .mat file with the variables used for generating the frame reconstruction.
+        % choose [yes/no] to save variables used for reconstruction to a .mat file
         if( save_dbar_output_as_mat_file == 1)
-            save([outstr, '.mat'],'gamma_real', 'init_trunc', 'max_trunc', 'Mk', 'hz', 'xx', 'numz',  'refframe', 'texpmat' );
+            save([outstr, '.mat'],'gamma_real', 'init_trunc', 'max_trunc', 'Mk', 'hz', 'xx', 'numz',  'reffname', 'texpmat' );
         end
         
         fclose('all');
-    
-    end % END MAIN FOR-LOOP ==> gamma_all has been completely filled with 'total_frames'-# of reconstructions.
-end
+        
 
+        % ================ check for best refframe =========================
+        % reset variables
+        highest_cond_cycle = -Inf;
+        best_frame_cycle = 0;
 
-%%
-if save_movie == 1
-% ==================================================================================================
-% =================================== Create a Movie with the Image Reconstructions ================
-% ==================================================================================================
-    % set up movie output directories.
-    movie_outdir = 'Dbar_human_recons_movies';                 % directory for the .avi recon movie file.
-    movie_outFname = ['TESTING_short_Dbar_movie_refframe=diastole_frames1500_1700_colorflip', datafname];         % output filename for recon movie.
-    movie_outstr = [movie_outdir, '/', movie_outFname];        % directory for the recon movie's corresponding .mat file. 
-    
-    % create the movie outdir if it doesn't exist.
-    if ~exist(movie_outdir, 'dir')
-            mkdir(movie_outdir)
-    end
-    
-    % create video writer object in the output directory.
-    writerObj = VideoWriter([movie_outdir, '/', movie_outFname]);
-    
-    % set the frame rate to one frame per second
-    set(writerObj,'FrameRate',5);
-    
-    % open the writer object.
-    open(writerObj);
-    
-    % Standardizing the colorbar for the image reconstruction.
-    max_gamma_all = max(max(max(gamma_all)));
-    min_gamma_all = min(min(min(gamma_all)));
-    % max_gamma_all = max(gamma_all(:), [], 'omitnan');
-    % min_gamma_all = min(gamma_all(:), [], 'omitnan');
-    range_gamma = max_gamma_all - min_gamma_all;
-    cmax_gamma = max_gamma_all - 0.2*range_gamma;
-    cmin_gamma = min_gamma_all + 0.2*range_gamma;
-    
-    % if cmin_gamma >= cmax_gamma
-    %     cmin_gamma = min_gamma_all;
-    %     cmax_gamma = max_gamma_all;
-    % end
-    
-    % initialize variable to keep track of the current frame # in the for-loop.
-    % frame_idx = 1; 
-    
-    % num_movie_frames = size(gamma_all, 3);
-    movie_frames = frames_to_reconstruct;
-    
-    % Plot movie
-    % iterate over all frames (MINUS the reference frame)
-    for ii = 1:length(movie_frames)
-    % for frame_num = all_frames
-        % choose [yes/no] to display movie to screen.
-        if plot_movie == 1
-            figure('visible','on');
-        else
-            figure('Visible','off');
+        gamma_real(isnan(gamma_real)) = 0;                 % convert NaNs --> 0s
+        avg_gamma = squeeze(mean(mean(gamma_real, 2), 3)); % find avg of rows (2) then cols (3) then squeeze to make it size num_frames x 1 (aka, 1 scalar avg per frame).
+        % avg_gamma = squeeze(mean(mean(gamma_real, 2, 'omitnan'), 3, 'omitnan'));
+
+        [avg, idx] = max(avg_gamma);                       % find the val and idx (aka, frame num) of the first occuring max cond. 
+
+        best_frame_in_cur_cycle = curr_frames(idx);
+
+        % update cycle best's
+        if avg > highest_cond_cycle
+            highest_cond_cycle = avg;
+            best_frame_cycle = best_frame_in_cur_cycle;
         end
-    
-        frame_idx = movie_frames(ii);
-    
-        colormap(cmap)
-    
-        % generate the pretty image reconstruction.
-        imagesc(flipud(gamma_all(:,:,frame_idx)))
-        
-        caxis([cmin_gamma,cmax_gamma])
-        colorbar
-        axis square
-        set(gca, 'Ydir', 'normal')
-    
-        % caxis([min(gamma_all(:)), max(gamma_all(:))])
-        % caxis([0.9951, 1.0117]);
-    
-        title(['Frame number = ',num2str(frame_idx), ...
-               ', init trunc = ', num2str(init_trunc), ...
-               ', max trunc = ', num2str(max_trunc)]); % add title to figure for reference frame number.
-        
-        % frame_num_double = double(frame_num); % this conversion is somehow needed for title.
-        frame_num_double = double(frame_idx); % this conversion is somehow needed for title.
-    
-        % Convert frame_num to string.
-        frame_str = ['Frame Number: ' num2str(frame_num_double)];
-            
-        frame_pick = getframe(gcf);
-        
-        writeVideo(writerObj, frame_pick);
-        
-        % frame_idx = frame_idx + 1; % to iterate through all frames in gamma all.
-    
-    end % END PLOTTING MOVIE
+        % disp("Frame number " + num2str(best_frame) + " chosen for breathing cycle " + cycle_idx)
 
+        best_frame_per_cycle(cycle_idx) = best_frame_cycle;
+        highest_cond_per_cycle(cycle_idx) = highest_cond_cycle;
+        % disp("Frame number " + num2str(best_frame) + " chosen for breathing cycle " + cycle_idx)
 
-    % save movie to file
-    % choose [yes/no] to save the movie to a .avi file.
-    if saved==1
-        save([movie_outstr, '.mat'], 'gamma_real', 'init_trunc', 'max_trunc', 'Mk', 'hz', 'xx', 'numz', 'texpmat' );
-    end
-    
-    % close the video writer object
-    close(writerObj);
+        
+    end % end looping over all frames in main for-loop
+    % highest_cond = 0;
+    % best_frame = 0;
+    disp("Frame number " + num2str(best_frame_cycle) + " chosen for breathing cycle " + cycle_idx)
 
 end
+disp(best_frame_per_cycle)
+% disp(['Frame number ',num2str(best_frame),' to be chosen for reference frame.'])

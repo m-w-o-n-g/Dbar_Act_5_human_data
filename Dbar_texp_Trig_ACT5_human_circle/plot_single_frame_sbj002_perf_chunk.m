@@ -1,5 +1,3 @@
-% for no-gauss trunc
-
 %===================================================================================================
 % This script runs the D-bar algorithm, calling the necessary functions to compute the approximate 
 % scattering transform texp and solve the Dbar equation

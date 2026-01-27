@@ -94,8 +94,8 @@ gamma_best = 300;
 
 cmap = 'jet';             % Select colormap for figures
 
-init_trunc = 4;         % Initial trunc. radius. Used to trunc scattering transform. Choose something smallish
-max_trunc = 4.4;          % Final max trunc. radius. Used to trunc scattering transform. Choose something bigger
+init_trunc = 3.9;         % Initial trunc. radius. Used to trunc scattering transform. Choose something smallish
+max_trunc = 4.1;          % Final max trunc. radius. Used to trunc scattering transform. Choose something bigger
 
 global_frame_idx = 1;     % to count the reconstructed frames?
 
@@ -890,7 +890,7 @@ if save_movie == 1
     % ==================================================================================================
     % set up movie output directories.
     movie_outdir = 'Dbar_human_recons_movies';                 % directory for the .avi recon movie file.
-    movie_outFname = ['jan26_1333_short_Dbar_movie_refframe=middiastole_dataset_09_1', datafname];         % output filename for recon movie.
+    movie_outFname = ['jan26_1434_short_Dbar_movie_refframe=middiastole_dataset_09_1', datafname];         % output filename for recon movie.
     movie_outstr = [movie_outdir, '/', movie_outFname];        % directory for the recon movie's corresponding .mat file. 
     
     % create the movie outdir if it doesn't exist.

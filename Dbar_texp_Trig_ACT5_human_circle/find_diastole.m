@@ -34,7 +34,8 @@ title('Extracted Cardiac Signal from EIT Voltages')
 % - peaks ~= systole, troughs = diastole
 % - more specifically, peaks correspond to full contraction which is exactly what mid-systole represents (b/n start and end of ventricular contraction).
 % - find peaks and the indices at which they occur
-[~, pks_indices] = findpeaks(-cardiac_signal, 'MinPeakDistance', 10);
+[~, pks_indices] = findpeaks(-cardiac_signal, 'MinPeakDistance', 10, 'MinPeakProminence', .001);
+% disp("trough indices: ")
 % disp(pks_indices)
 
 % return the frames at which start-systoles occur.

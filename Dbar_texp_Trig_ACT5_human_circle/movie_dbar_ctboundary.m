@@ -1,9 +1,21 @@
 %===================================================================================================
-% This script runs the D-bar algorithm, calling the necessary functions to compute the approximate
-% scattering transform texp and solve the Dbar equation.
-% This is for ACT5 DATA using TRIG PATTERNS on a CIRCULAR DOMAIN. This code is set up to reconstruct
-% human data as difference images, by selecting one reference frame from a multiframe dataset. 
-
+% This script runs the D-bar algorithm, calling the necessary functions to compute the approximate 
+% scattering transform texp and solve the Dbar equation
+%
+% This code is set up to reconstruct human data as difference images by selecting one reference
+% frame from a multiframe dataset. 
+%
+% This is for…
+% - ACT5 human data
+% - CT (human) domain
+% - trig patterns
+% - manual truncation (no gaussian truncation)
+% - reference frame used: frame found in our "find-reference-frame" script.
+%
+% Plotting Reconstructions:
+% - option to plot ONE frame (one gamma)
+% - option to plot movie (iterate over all gammas in gamma_all)
+%
 % Note: this uses the transformed DN map, so general domain functionality could
 % be implemented by importing electrode positions from a boundary file, but this is not currently
 % done in this code. 
@@ -13,9 +25,9 @@
 % reconstruct multiple frames.
 %
 % Note: this code is a little messy and could be cleaned up some, but it does seem to work fine
-
-% Authors:                  Melody Alsaker, Jennifer Mueller, Peter Muller
-% Date Modified:            September 2024
+%
+% Authors:          Drew Fitzpatrick, Lydia Lonzarich, and Matthew Wong
+% Date Modified:    December 2025
 %
 %===================================================================================================
 
@@ -97,8 +109,8 @@ N = numel(xx);
 
 % z-grid step size used to create the z grid (xx=-1:hz:1). Smaller value => finer mesh.
 
-init_trunc = 4.5;       % Initial trunc. radius. Used to trunc scattering transform. Choose something smallish
-max_trunc = 4.7;        % Final max trunc. radius. Used to trunc scattering transform. Choose something bigger
+init_trunc = 4.2;       % Initial trunc. radius. Used to trunc scattering transform. Choose something smallish
+max_trunc = 4.6;        % Final max trunc. radius. Used to trunc scattering transform. Choose something bigger
 
 
 %===================================================================================================
@@ -107,16 +119,16 @@ max_trunc = 4.7;        % Final max trunc. radius. Used to trunc scattering tran
 % Load measured data. We will pull various physical parameters from this.  
 load([datadir, datafname])
 
-% Load bdry pts. Odd-indixed pts are electrode ctrs
+% Load bdry pts. btw, this struct contains 4 Nx2 members: outer, heart, rlung, llung
 coords_struct = load([bdry_directory, bdry_file]);
 
 
 %===================================================================================================
 %======================== Generate Reconstructions With the Dbar Algorithm =========================
 %===================================================================================================
+
 % START OF MAIN FOR-LOOP
 % Iterate over all frames in dataset (MINUS reference frames) and fill gamma_all with frame reconstructions. 
-
 for frame = all_frames
 
 
@@ -146,28 +158,6 @@ numCP = L-1;       % Number of linearly independent current patterns
 % Format of J0: Each column corresponds to a current pattern, as follows
 % curr_amp * [ cos(theta), cos(2*theta), ... ,cos(16*theta), sin(theta), sin(2*theta), ..., sin(16*theta) ]; 
 
-% extract electrode geometry params from the loaded .mat file to create circular domain.
-eheight = elec_height; ewidth = elec_width;     % Electrode height, width (in meters)
-perim = circumference * 0.0254;                 % Domain perimeter in meters (the variable circumference is loaded in inches)
-dtheta = 2*pi/L;                                % We assume equal electrode spacing
-etheta = dtheta:dtheta:2*pi;                    % Angular positions of electrode centers
-eArea = eheight * ewidth;                       % Simple area of electrode (meters^2)
-
-coords1 = coords_struct.coords.outer(:,:);
-coords2 = coords_struct.coords.heart(:,:);
-coords3 = coords_struct.coords.rlung(:,:);
-coords4 = coords_struct.coords.llung(:,:);
-
-% Comment OFF: FLIPPED boundary; Comment ON: UNFLIPPED boundary
-coords1(:,2) = -coords1(:,2);
-coords2(:,2) = -coords2(:,2);
-coords3(:,2) = -coords3(:,2);
-coords4(:,2) = -coords4(:,2);
-
-coords = [coords4;coords2;coords3;coords1];
-
-x_bdry = coords(:,1); y_bdry = coords(:,2);
-
 %========================Set up numerical parameters=======================
 
 % Grid and computational parameters
@@ -183,22 +173,53 @@ Mtimes2 = 2*Mk;
 % coords = zeros(L,2);        
 % coords(:,1) = x_bdry;  coords(:,2) = y_bdry;
 
-% Get polygon data: geom = [ area   X_cen  Y_cen  perimeter ]
+% extract electrode geometry params from the loaded .mat file to create circular domain.
+eheight = elec_height; ewidth = elec_width;     % Electrode height, width (in meters)
+perim = circumference * 0.0254;                 % Domain perimeter in meters (the variable circumference is loaded in inches)
+dtheta = 2*pi/L;                                % We assume equal electrode spacing
+etheta = dtheta:dtheta:2*pi;                    % Angular positions of electrode centers
+eArea = eheight * ewidth;                       % Simple area of electrode (meters^2)
+
+% retrieve the boundary coords, [x,y], from each member in the coordinate loaded struct.
+coords1 = coords_struct.coords.outer(:,:);
+coords2 = coords_struct.coords.heart(:,:);
+coords3 = coords_struct.coords.rlung(:,:);
+coords4 = coords_struct.coords.llung(:,:);
+
+% Comment OFF: FLIPPED boundary; Comment ON: UNFLIPPED boundary
+coords1(:,2) = -coords1(:,2);
+coords2(:,2) = -coords2(:,2);
+coords3(:,2) = -coords3(:,2);
+coords4(:,2) = -coords4(:,2);
+
+% combine all boundary coords, [x, y] into a single list
+coords = [coords4;coords2;coords3;coords1];
+
+% grab the x and y parts of each coordinate.
+x_bdry = coords(:,1);
+y_bdry = coords(:,2);
+
+
+% Get polygon data.
+% we only care about geom = [ area   X_cen  Y_cen  perimeter ]
 [geom,~,~] = polygeom(x_bdry,y_bdry);
 
 % Move origin to centroid of the boundary
-x_bdry = x_bdry - geom(2); y_bdry = y_bdry - geom(3);
+x_bdry = x_bdry - geom(2); 
+y_bdry = y_bdry - geom(3);
 
-% Scale to match physical parameters
+% physical scaling: scale to match physical parameters
 domScaleFactor = perim / geom(4);
+x_bdry = x_bdry * domScaleFactor; 
+y_bdry = y_bdry * domScaleFactor;
 
-x_bdry = x_bdry * domScaleFactor; y_bdry = y_bdry * domScaleFactor;
+% % Plots the boundary
+% figure
+% plot(x_bdry,y_bdry,'*') 
+% axis square
+% title('Scaled boundary shape')
 
-%figure
-%plot(x_bdry,y_bdry,'*')  % Plots the boundary
-%axis square
-%title('Scaled boundary shape')
-
+% normalization (scaling) pt. 1
 [~,bdry_r] = cart2pol(x_bdry,y_bdry);
 bdry_rmax = max(bdry_r);
 
@@ -206,13 +227,20 @@ bdry_rmax = max(bdry_r);
 rot_angle = 0;  
 Rmat = [cos(rot_angle), -sin(rot_angle); sin(rot_angle), cos(rot_angle)];
 rot_coords = Rmat*[x_bdry'; y_bdry'];
-x_bdry = rot_coords(1,:)'; y_bdry = rot_coords(2,:)';
+x_bdry = rot_coords(1,:)'; 
+y_bdry = rot_coords(2,:)';
 %figure
 %plot(x_bdry,y_bdry,'o')  % Plots the boundary
 %axis square
 %title('Scaled and rotated boundary shape')
 
+% % normalization (scaling) pt. 2
+% x_bdry = x_bdry / bdry_rmax;
+% y_bdry = y_bdry / bdry_rmax;
+
 Ldiv2 = floor(L/2);  % half hte number of electrodes. Note if L is odd, this means more sines than cosines
+
+% coords = [x_bdry, y_bdry];
 
 [A1,A2,B1,B2,C1,C2,D1,D2,theta,r_th,a,M_pts,rmax]=Fourier_coefficients_gen_MODIFIED(coords,perim,L,Ldiv2);
 
@@ -228,8 +256,49 @@ N = numel(xx);
 [z1,z2] = meshgrid(xx,xx);
 
 % NOTE: Added from the modified Sean's .*1000 code
+% normalization (scaling) pt. 2
 x_bdry = x_bdry / bdry_rmax;
 y_bdry = y_bdry / bdry_rmax;
+% x_bdry = x_bdry / rmax;
+% y_bdry = y_bdry / rmax;
+
+% % Plots the boundary
+% figure
+% plot(x_bdry,y_bdry,'*') 
+% axis square
+% title('Scaled boundary shape')
+
+% % compute boundary arc length
+% dx = diff(x_bdry);
+% dy = diff(y_bdry);
+% ds = sqrt(dx.^2 + dy.^2);
+% s_arc = [0; cumsum(ds)];
+% perimeter_numeric = s_arc(end);
+% 
+% % define electrode placements along CT boundary based on boundary arc lengthe
+% elec_placement = linspace(0, perimeter_numeric, L+1);
+% elec_placement(end) = []; % remove duplicated end electrode.
+% 
+% % place electrode centers on the actual boundary
+% x_elec = interp1(s_arc, x_bdry, elec_placement, 'linear');
+% y_elec = interp1(s_arc, y_bdry, elec_placement, 'linear');
+% 
+% % find electrode angles
+% etheta = atan2(y_elec, x_elec);
+% etheta(etheta < 0) = etheta(etheta < 0) + 2*pi; % convert electrode positions to angles
+% dtheta = mean(diff(sort(etheta))); % avg spacing
+% 
+% plot electrode spacing
+% figure;
+% plot(x_bdry, y_bdry, 'k-'); hold on;
+% plot(x_elec, y_elec, 'ro');
+% axis equal;
+% title('Electrodes evenly spaced by arc-length');
+
+% % recompute rmax
+% [~, r_bdry] = cart2pol(x_bdry, y_bdry);
+% rmax = max(r_bdry);
+% fprintf('Normalized boundary rmax = %.4f\n', rmax);
 
 z = z1 + 1i*z2;
 z = reshape(z,N*N,1);                       % Set of z-vals is now a vector
@@ -259,6 +328,7 @@ conjk = conj(k);                                    % conj of all k-vals (matrix
 
 % The k-grid for the Green's function beta needs to be larger to accomodate
 % the convolution.
+size(x); 
 xBig            = [-(s+((Mdiv2):-1:1)*h),x,s+(1:(Mdiv2))*h];
 [K1Big, K2Big]  = meshgrid(xBig,xBig);
 k_Big           = K1Big + 1i*K2Big;
@@ -355,9 +425,11 @@ for jj = 1:num_frames
     
     texp = zeros(numk,1);
     
-    L2=Ldiv2;
+    L2=Ldiv2; % half the number of electrodes
+
     ak_L2=((1i*ktrunc_max).^L2)/factorial(L2);
     akbar_L2=((1i*conjktrunc_max).^L2)/factorial(L2);
+    
     sumjk=zeros(size((1i*conjktrunc_max)));
     sumk=zeros(size((1i*conjktrunc_max)));
     sumj=zeros(size((1i*conjktrunc_max)));
@@ -697,6 +769,11 @@ for jj = 1:num_frames
         sqrtgamma = m((numk+Mk)/2 +1) + 1i * m( (3*numk + Mk)/2 + 1);
         gammatemp(ii) = sqrtgamma * sqrtgamma;
     end
+
+    figure;
+    histogram(real(gammatemp),100);
+    title('Distribution of gamma values');
+    
     gamma(jj,zidx) = gammatemp;
     
 end % All images have now been processed.
@@ -751,6 +828,7 @@ if(display_images_to_screen == 1 || save_images_as_jpg_files == 1 )
         % generate the pretty image reconstruction.
         % imagesc(xx,xx,fliplr(squeeze(gamma_all(:,:,1))),[datamin, datamax]);
         imagesc(xx,xx,flipud(squeeze(gamma_all(:,:,1))),[datamin, datamax]);
+        % imagesc(xx, xx, squeeze(gamma_all(:,:,1)),[datamin, datamax]) % testing to make sure the boundary plot is consistent with the actual imagesc reconstruction plot
         
         set(gca, 'Ydir', 'normal');
         
@@ -758,7 +836,7 @@ if(display_images_to_screen == 1 || save_images_as_jpg_files == 1 )
         axis([-1 1 -1 1 ]);
         axis square;
         
-        title(['Frame number = ',num2str(frame), 'init_trunc = ',num2str(init_trunc),'max_trunc = ',num2str(max_trunc)]); % add title to figure for reference frame number.
+        title(['Frame number = ',num2str(frame), ', init_trunc = ',num2str(init_trunc),', max_trunc = ',num2str(max_trunc)]); % add title to figure for reference frame number.
         
         % choose [yes/no] to save image individual reconstruction image as a .jpg file.
         if( save_images_as_jpg_files == 1)

@@ -1,16 +1,19 @@
+% reconstructing ventilation sets using a sliding window approach
+% (reference frames = highest avg conducitivity of previous breathing cycle)
+
 %===================================================================================================
 % This script runs the D-bar algorithm, calling the necessary functions to compute the approximate 
 % scattering transform texp and solve the Dbar equation
 %
 % This code is set up to reconstruct human data as difference images by selecting frames at 
-% which diastoles occur from a multiframe dataset.
+% which mid-diastole occur from a multiframe dataset.
 %
 % This is for…
 % - ACT5 human data
 % - circular domain
 % - trig patterns
-% - Gaussian truncation
-% - reference frames used: frames at which diastoles occur in ECG signal.
+% - manual truncation (no gaussian truncation)
+% - reference frames used: frames at which mid-diastoles occur in ECG signal.
 %
 % Plotting Reconstructions:
 % - option to plot ONE frame (one gamma) 
@@ -19,7 +22,7 @@
 % Note: this code is a little messy and could be cleaned up some, but it does seem to work fine
 %
 % Authors:              Lydia Lonzarich
-% Date Modified:        January 16, 2025
+% Date Modified:        December 17, 2025
 %
 %===================================================================================================
 
@@ -47,7 +50,7 @@ datadir = 'ACT5_humanData/';
 
 % File name of .mat file containing EIT data.
 % datafname = 'modified_16x16_Sbj02_2D_16e_24_10_16_12_38_03_93750';
-datafname = 'Sbj001_93kHz_perf_24_10_15_11_05_09_1';
+datafname = 'Sbj001_93kHz_vent_24_10_15_10_51_57_1';
 
 % Directory for the program output to be saved to. If it doesn't exist, we'll create it later.
 outdir = 'HumanRecons';
@@ -57,14 +60,15 @@ outdir = 'HumanRecons';
 % ================================ Specify Mesh Size Parameters  ===================================
 % ==================================================================================================
 Mk = 8;                % Size of k-grid is Mk x Mk
-hz = 0.06;              % z-grid step size used to create the z grid (xx=-1:hz:1). Smaller value => finer mesh.
+hz = 0.07;              % z-grid step size used to create the z grid (xx=-1:hz:1). Smaller value => finer mesh.
 
 
 %===================================================================================================
 %======================================== Specify Reconstruction Parameters ========================
 %===================================================================================================
 startframe = 1;    
-endframe = 201;
+endframe = 300;
+refframes = [33, 137, 254, 352, 451];
 
 % determine the total # of frames to reconstruct (we must ignore the reference frame when it's in the range (startframe,endframe))
 % if refframe >= startframe & refframe <= endframe
@@ -91,8 +95,8 @@ gamma_best = 300;
 
 cmap = 'jet';             % Select colormap for figures
 
-init_trunc = 3.6;         % Initial trunc. radius. Used to trunc scattering transform. Choose something smallish
-max_trunc = 4.2;          % Final max trunc. radius. Used to trunc scattering transform. Choose something bigger
+init_trunc = 3.8;         % Initial trunc. radius. Used to trunc scattering transform. Choose something smallish
+max_trunc = 4.5;          % Final max trunc. radius. Used to trunc scattering transform. Choose something bigger
 
 global_frame_idx = 1;     % to count the reconstructed frames?
 
@@ -109,16 +113,17 @@ Vmulti = real(frame_voltage);                     % 32 x 32 x 2843 (raw voltage 
 Vmulti = Vmulti(active_elecs, active_elecs, :);   % 16 x 16 x 2843 (remove 0 voltage row)
 Vmulti_perf = Vmulti(:,:,startframe:endframe);    % 16 x 16 x num_frames=261
 
-% extract diastoles. These will be used as reference frames.
-diastoles = find_diastole(Vmulti_perf);
-disp(diastoles) % there are 26.
+% extract troughs. These will be used as reference frames.
+troughs = find_diastole(Vmulti_perf);
+disp("troughs:")
+disp(troughs) 
 
 % "grab" all selected frames in the dataset.
-all_frames = startframe:endframe; % 261
+all_frames = startframe:endframe; 
 
-% remove the diastole frames from the list of frames to reconstruct.
-frames_to_reconstruct = setdiff(all_frames, diastoles);
-disp("number of frames to reconstruct: " + num2str(length(frames_to_reconstruct)))
+% remove the trough frames from the list of frames to reconstruct.
+frames_to_reconstruct = setdiff(all_frames, troughs);
+disp("Total number of frames available to reconstruct: " + num2str(length(frames_to_reconstruct)))
 
 % initialize gamma_all for storing all frame reconstructions. 
 xx = -1:hz:1;
@@ -127,40 +132,35 @@ total_frames = endframe - startframe + 1;
 gamma_all = NaN(N, N, total_frames); % used to be zeros
 
 % define the number of reference frames to be used.
-num_refframes = length(diastoles);
+num_refframes = length(troughs);
+
+% define the number of cycles (we want to use the refframe from the prev cycle, so we won't reconstruct cycle 1 (frames from startframe->trough1)
+num_cycles = length(troughs) - 1;
 
 
 %===================================================================================================
 %======================== Generate Reconstructions With the Dbar Algorithm =========================
 %===================================================================================================
-for cycle_idx = 1:num_refframes
-    curr_mid_systole = diastoles(cycle_idx);
-    disp("Current diastole: " + curr_mid_systole)
-    disp("Reference frame #: " + cycle_idx)
-
-    refframe = diastoles(cycle_idx);  % use the i-th diastole as the current iteration's reference frame.
-    % disp("refframe idx: " + refframe)
+for cycle_idx = 2:3
+    
+    refframe = refframes(cycle_idx - 1);
+    % refframe = 136;
 
     Vref = Vmulti_perf(:,:,refframe);    % grab the reference frame's voltages.
+
+    % define the window of frames to be reconstructed against the current iteration's reference frame
+    start_window = troughs(cycle_idx-1) + 1; % the +1 because we don't want to reconstruct the trough frame itself
+    end_window = troughs(cycle_idx);    % the +1 to get the next trough (so we have a complete breathing cycle (trough->trough)
+
+    % disp("Start window: " + start_window + ", end window: " + end_window);
+
+    % curr_frames will be all the frames that fall in the NEXT breathing cycle
+    curr_frames = frames_to_reconstruct(frames_to_reconstruct >= start_window & ...
+                                        frames_to_reconstruct <= end_window);
     
-    % define the frames to be used against the current iteration's reference frame.
-    curr_frames = frames_to_reconstruct( ...
-        frames_to_reconstruct > diastoles(max(cycle_idx-1,1)) & ...
-        frames_to_reconstruct < diastoles(min(cycle_idx+1, end)) );
+    disp("Cycle " + cycle_idx + ": refframe " + num2str(refframe) + ", frames " + num2str(start_window) + "-" + num2str(end_window))
 
     num_frames = length(curr_frames);
-    disp("num frames: " + num_frames)
-
-    % % reconstruct frames around the current diastole: 5 before diastole --> 5 after diastole
-    % % disp("all frames: " + all_frames)
-    % % disp("startframe: " + startframe)
-    % % disp("curr mid systole: " + curr_mid_systole)
-    % frames_to_reconstruct = find(all_frames >= startframe & all_frames <= curr_mid_systole + 5);
-    % disp("number of frames to reconstruct: " + length(frames_to_reconstruct))
-    % 
-    % % increment the starting frame for next iteration
-    % startframe = curr_mid_systole + 5;
-
 
     % START OF DBAR ALGORITHM
     % Iterate over all frames in dataset subset and fill gamma_all with frame reconstructions. 
@@ -376,8 +376,7 @@ for cycle_idx = 1:num_refframes
         
         % gamma is the conductivity we will reconstruct. Outside domain will be NaN
         gamma = ones(num_frames,N*N) * NaN;
-        
-        
+
         for jj = 1:num_frames
             % disp("iteration: " + jj)
             % V = Vmulti_perf(:,:,jj); 
@@ -417,7 +416,7 @@ for cycle_idx = 1:num_refframes
             Lhat = [Lhat1, Lhat2; Lhat3, Lhat4];
             
             dLambda = Lhat - refLhat; % transformed DN map, size numCP x numCP 
-            %dLambda = -(Lhat - refLhat); % transformed DN map, size numCP x numCP 
+            % dLambda = -(Lhat - refLhat); % transformed DN map, size numCP x numCP 
             %dLambda = Lambda - refLambda;
             
             %==================Compute approx. scattering transform================
@@ -854,12 +853,12 @@ end
 
 %%
 if save_movie == 1
-% ==================================================================================================
-% =================================== Create a Movie with the Image Reconstructions ================
-% ==================================================================================================
+    % ==================================================================================================
+    % =================================== Create a Movie with the Image Reconstructions ================
+    % ==================================================================================================
     % set up movie output directories.
     movie_outdir = 'Dbar_human_recons_movies';                 % directory for the .avi recon movie file.
-    movie_outFname = ['TESTING_short_Dbar_movie_refframe=diastole_frames1500_1700_colorflip', datafname];         % output filename for recon movie.
+    movie_outFname = ['jan26_1854_short_Dbar_movie_refframe=prev_cycle_highest_cond_dataset_57_1', datafname];         % output filename for recon movie.
     movie_outstr = [movie_outdir, '/', movie_outFname];        % directory for the recon movie's corresponding .mat file. 
     
     % create the movie outdir if it doesn't exist.
