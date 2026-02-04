@@ -56,8 +56,8 @@ total_runtime = 0;
 % ================================= Choose What to Plot and Save ===================================
 % ==================================================================================================
 save_dbar_output_as_mat_file = 0;
-display_images_to_screen = 1;
-save_gam_real_as_mat_file = 0;
+display_images_to_screen = 0;
+save_gam_real_as_mat_file = 1;
 
 
 %===================================================================================================
@@ -67,12 +67,12 @@ save_gam_real_as_mat_file = 0;
 data_dir = 'ACT5_humanData/';
 
 % .mat file containing EIT data.
-data_fname = 'perf_chunk_1_Sbj02_2D_16e_24_10_16_12_38_03_93750';
+data_fname = 'Sbj001_35kHz_vent_24_10_15_10_45_29_1';
 
 % Directory for the program output to be saved to. If it doesn't exist, we'll create it later.
 output_directory = [];
 outdir = 'gammas/';
-out_fname = 'jan15_831_gamma_cond_distributions_Sbj002_perfchunk1.mat';
+out_fname = 'feb2_230_gamma_cond_distributions_Sbj001_29_1.mat';
 
 % File containing list of bdry pts and the directory where it is stored
 bdry_file = 'EllipseBdry_1_952p6mm.txt';
@@ -92,9 +92,9 @@ M = 32;                         % Size of k-grid for Fourier domain is MxM. Ente
 hh = 0.02;                      % Spatial z-grid step size. This changes the number of pixels in your reconstruction.  Smaller value => finer mesh.
                                 % Choose 0.01 <= hh <= 0.065 for best results.
 
-ee = 0.3;                       % Used to compute width of Gaussian window in FT. Smaller = more truncation
+ee = 0.2;                       % Used to compute width of Gaussian window in FT. Smaller = more truncation
 
-max_trunc = 4.6;                  % Specify a circular truncation region for the low-pass Fourier domain filter.
+max_trunc = 4.2;                  % Specify a circular truncation region for the low-pass Fourier domain filter.
                                 % This determines how much high-freq content we allow.
                                 % Final max trunc radius. Choose something bigger.
                         
@@ -112,9 +112,9 @@ L = 32;                  % Number of electrodes
 %===================================================================================================
 %======================================== Specify Reconstruction Parameters ========================
 %===================================================================================================
-ref_frame = 141;
-startframe = 140; 
-endframe = 140;
+ref_frame = 361;
+startframe = 55; 
+endframe = 220;
 % trg_frame = 96; % frame to reconstruct
 
 % determine the total # of frames to reconstruct (we must ignore the reference frame when it's in the range (startframe,endframe))

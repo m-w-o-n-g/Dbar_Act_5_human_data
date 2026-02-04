@@ -52,15 +52,19 @@ datadir = 'ACT5_humanData/';
 % datafname = 'modified_16x16_Sbj02_2D_16e_24_10_16_12_38_03_93750';
 datafname = 'perf_chunk_2_Sbj02_2D_16e_24_10_16_12_38_03_93750';
 
-% Directory for the program output to be saved to. If it doesn't exist, we'll create it later.
-outdir = 'HumanRecons';
+% File containing list of bdry pts and the directory where it is stored
+bdry_file = 'EllipseBdry_1_952p6mm.txt';
+bdry_directory = [];
 
 
 % ==================================================================================================
 % ================================ Specify Mesh Size Parameters  ===================================
 % ==================================================================================================
-Mk = 32;                % Size of k-grid is Mk x Mk
-hz = 0.02;              % z-grid step size used to create the z grid (xx=-1:hz:1). Smaller value => finer mesh.
+perim_inches = 40;              % Perimeter of boundary (inches).
+perim = perim_inches * 0.0254;  % Perimeter of boundary (meters).
+
+Mk = 32;                        % Size of k-grid is Mk x Mk
+hz = 0.02;                      % z-grid step size used to create the z grid (xx=-1:hz:1). Smaller value => finer mesh.
 
 
 %===================================================================================================
@@ -70,17 +74,18 @@ hz = 0.02;              % z-grid step size used to create the z grid (xx=-1:hz:1
 startframe = 1;  
 endframe = 261;
 
-init_trunc = 3.6;         % Initial trunc. radius. Used to trunc scattering transform. Choose something smallish
-max_trunc = 3.8;          % Final max trunc. radius. Used to trunc scattering transform. Choose something bigger
+ee = 0.3;
+
+max_trunc = 4.6; 
+
+cmap = 'jet';
+
+% L = 16;                   % FOR SBJ002 DATASETS...because current is only applied to electrodes 1-16, accordig to Jennifer.
+active_elecs = 1:16;      % FOR SBJ002 DATASETS...because current is only applied to electrodes 1-16, according to Jennifer.
 
 gamma_best = 300;
 
-cmap = 'jet';             % Select colormap for figures
-
 global_frame_idx = 1;     % to count the reconstructed frames?
-
-% active_elecs = 1:32;      % FOR SBJ001 DATASETS.
-active_elecs = 1:16;      % FOR SBJ002 DATASETS...because current is only applied to electrodes 1-16, according to Jennifer.
 
 %===================================================================================================
 %======================== Load and Extract External Data & Physical Parameters =====================
@@ -90,7 +95,16 @@ load([datadir, datafname])
 
 % trim voltage measurement .mat files.
 Vmulti = real(frame_voltage);                     % 32 x 32 x 2843 (raw voltage matrix)
+% Vmulti = frame_voltage;
 Vmulti = Vmulti(active_elecs, active_elecs, :);   % 16 x 16 x 2843 (remove 0 voltage row)
+
+figure;
+subplot(1,2,1); imagesc(Vmulti(:,:,1)); title('Raw Data'); 
+xlabel('Columns'); ylabel('Rows');
+colorbar
+
+
+
 Vmulti_perf = Vmulti(:,:,startframe:endframe);    % 16 x 16 x num_frames
 
 % extract mid-systoles.
@@ -104,38 +118,31 @@ all_frames = startframe:endframe;
 frames_to_reconstruct = setdiff(all_frames, mid_systoles);
 disp("Number of frames available to reconstruct: " + num2str(length(frames_to_reconstruct)))
 
-xx = -1:hz:1;
-N = numel(xx);
-
 
 %===================================================================================================
 %===================== Generate SINGLE Reconstructions With the Dbar Algorithm =====================
 %===================================================================================================
 refframe = mid_systoles(9);          % choose reference frame (one of the mid-systoles).
+disp("Mid-systole chosen as reference frame: " + refframe)
 Vref = Vmulti_perf(:,:,refframe);    % grab the reference frame's voltages.
+Vref = Vref.*1000;
 
 target_frame = refframe + 3;         % choose the frame to reconstruct relative to the chosen reference frame.
 disp("Frame to reconstruct " + target_frame)
 
 num_frames = 1;
 
-V = Vmulti_perf(:,:,frame);         % measured voltages for the current frame. 
+% V = Vmulti_perf(:,:,frame);         % measured voltages for the target frame. 
 
 % Current pattern matrix (unnormalized and including all columns) (use these to derive DN map)
-J0 = cur_pattern;
-J0 = J0(active_elecs, active_elecs);
+J = cur_pattern;
+J = J(active_elecs, active_elecs); % keep only 16 electrodes and the 16 current patterns.
 
-L = length(J0);    % Number of electrodes
+L = length(J);    % Number of electrodes
 numCP = L-1;       % Number of linearly independent current patterns
 
-% extract electrode geometry params from the loaded .mat file to create circular domain.
-eheight = elec_height; ewidth = elec_width;     % Electrode height, width (in meters)
-perim = circumference * 0.0254;                 % Domain perimeter in meters (the variable circumference is loaded in inches)
-dtheta = 2*pi/L;                                % We assume equal electrode spacing
-etheta = dtheta:dtheta:2*pi;                    % Angular positions of electrode centers
-eArea = eheight * ewidth;                       % Simple area of electrode (meters^2)
+coords = load([bdry_directory, bdry_file], '-ascii'); % Load bdry points. Odd-indixed pts are electrode ctrs
 
-x_bdry = cos(etheta)'; y_bdry = sin(etheta)'; 
 
 
 %========================Set up numerical parameters=======================
@@ -147,11 +154,27 @@ h = 2*s/(Mk-1);         % k-grid step size
 Mdiv2 = Mk/2;
 Mtimes2 = 2*Mk;
 
+
+%======================== Set up electrode geometry parameters =======================
+
+% extract electrode geometry params from the loaded .mat file to create circular domain.
+% eheight = elec_height; ewidth = elec_width;     % Electrode height, width (in meters)
+% perim = circumference * 0.0254;                 % Domain perimeter in meters (the variable circumference is loaded in inches)
+% dtheta = 2*pi/L;                                % We assume equal electrode spacing
+% etheta = dtheta:dtheta:2*pi;                    % Angular positions of electrode centers
+% eArea = eheight * ewidth;                       % Simple area of electrode (meters^2)
+
+% x_bdry = cos(etheta)'; y_bdry = sin(etheta)'; 
+
+eheight = 0.0254; ewidth = 0.0254;
+eArea = ewidth * eheight;
+dtheta = 2*pi/L;
+
+
 %================ Set up Boundary Data and Arclength function==============
 
 % store position of electrodes as Lx2 matrix.
-coords = zeros(L,2);        
-coords(:,1) = x_bdry;  coords(:,2) = y_bdry;
+x_bdry = coords(:,1); y_bdry = coords(:,2);
 
 % Get polygon data: geom = [ area   X_cen  Y_cen  perimeter ]
 [geom,~,~] = polygeom(x_bdry,y_bdry);
@@ -162,8 +185,7 @@ x_bdry = x_bdry - geom(2); y_bdry = y_bdry - geom(3);
 % Scale to match physical parameters
 domScaleFactor = perim / geom(4);
 
-%x_bdry = x_bdry * domScaleFactor; y_bdry = y_bdry * domScaleFactor;
-
+x_bdry = x_bdry * domScaleFactor; y_bdry = y_bdry * domScaleFactor;
 %figure
 %plot(x_bdry,y_bdry,'*')  % Plots the boundary
 %axis square
@@ -173,26 +195,32 @@ domScaleFactor = perim / geom(4);
 bdry_rmax = max(bdry_r);
 
 % Rotate the boundary so that e1 is at the angular position 0 + dtheta.
-% rot_angle = 0;  
-% Rmat = [cos(rot_angle), -sin(rot_angle); sin(rot_angle), cos(rot_angle)];
-% rot_coords = Rmat*[x_bdry'; y_bdry'];
-% x_bdry = rot_coords(1,:)'; y_bdry = rot_coords(2,:)';
+rot_angle = 0;  
+Rmat = [cos(rot_angle), -sin(rot_angle); sin(rot_angle), cos(rot_angle)];
+rot_coords = Rmat*[x_bdry'; y_bdry'];
+x_bdry = rot_coords(1,:)'; y_bdry = rot_coords(2,:)';
 %figure
 %plot(x_bdry,y_bdry,'o')  % Plots the boundary
 %axis square
 %title('Scaled and rotated boundary shape')
 
+% angles corresponding to electrode centers
+% etheta = dtheta:dtheta:2*pi;
+
 Ldiv2 = floor(L/2);  % half hte number of electrodes. Note if L is odd, this means more sines than cosines
 
-[A1,A2,B1,B2,C1,C2,D1,D2,theta,r_th,a,M_pts,rmax]=Fourier_coefficients_gen_MODIFIED(coords,perim,L,Ldiv2);
+% [A1,A2,B1,B2,C1,C2,D1,D2,theta,r_th,a,M_pts,rmax]=Fourier_coefficients_gen_MODIFIED(coords,perim,L,Ldiv2);
+[A1,A2,B1,B2,C1,C2,D1,D2,theta,r_th,a,M_pts,rmax]=Fourier_coefficients_gen(bdry_directory,bdry_file,perim,L,Ldiv2);
+
 
 
 %======================Set up computational grids==========================
-
 %..........................................................................
 % Construct mesh of z-values representing physical domain. We can throw out
 % z-values outside the domain; these will not be needed in the computation.
 %..........................................................................
+xx = -1:hz:1;
+N = numel(xx);
 [z1,z2] = meshgrid(xx,xx);
 
 z = z1 + 1i*z2;
@@ -214,15 +242,37 @@ x = -s:h:s;
 k = K1 + 1i*K2;                                     % The set of all k-vals (matrix)
 numk = Mk*Mk;                                       % Total number of k-vals
 
-kidx_init = find(abs(k)<init_trunc & abs(k)>0.1);
-kidx_max = find(abs(k)<max_trunc & abs(k)>0.1);     % Indices of k-vals in trunc area
+x_bdry = x_bdry / bdry_rmax;
+y_bdry = y_bdry / bdry_rmax;
+z = z1 + 1i*z2;
+z = reshape(z,N*N,1);                   % Set of z-vals is now a vector
+[IN, ON]=inpolygon(z1,z2,x_bdry,y_bdry); % Find indices of z-vals in domain
+zidx = find(IN + ON);                   % Indices of z-vals in domain
+z = z(zidx);                            % Get rid of z-vals outside domain
+numz = numel(zidx);                     % Number of in-domain z-vals
+conjz = conj(z);                        % Complex conj of in-domain z-vals
+    
+
+%..........................................................................
+% Construct computational grid with M x M elements & complex variable k
+% We will need to eliminate the k-values outside the truncation radius and
+% within a small radius around k=0, but we will need to keep the original
+% k-grid for some comutations.
+%..........................................................................
+x = -s:h:s;
+[K1, K2] = meshgrid(x,x);
+k = K1 + 1i*K2;                         % The set of all k-vals (matrix)
+numk = M*M;                             % Total number of k-vals
+
+% kidx_init = find(abs(k)<init_trunc & abs(k)>0.1);
+% kidx_max = find(abs(k)<max_trunc & abs(k)>0.1);     % Indices of k-vals in trunc area
+kidx_max = find(abs(k)<max_trunc & abs(k)>1e-6); % Indices of k-vals in trunc area
 ktrunc_max = k(kidx_max);
 numktrunc_max = numel(ktrunc_max);
 conjktrunc_max = conj(ktrunc_max);
 conjk = conj(k);                                    % conj of all k-vals (matrix)
 
-% The k-grid for the Green's function beta needs to be larger to accomodate
-% the convolution.
+% The k-grid for the Green's function beta needs to be larger to accomodate the convolution.
 xBig            = [-(s+((Mdiv2):-1:1)*h),x,s+(1:(Mdiv2))*h];
 [K1Big, K2Big]  = meshgrid(xBig,xBig);
 k_Big           = K1Big + 1i*K2Big;
@@ -240,7 +290,9 @@ p  = shiftr(1:(Mtimes2),0,Mk,1);
 fft_beta  = fftn(beta(p,p)+beta(p1,p1)+beta(p1,p)+beta(p,p1))/4;
 
 %======================= Construct Current Matrix J =======================
-J = J0(:,1:numCP); 
+CurrAmp = max(max(J));
+
+J = J(:,1:numCP); 
 for kk = 1:numCP
  % J = J/norm(J(:,kk),2);
     J(:,kk) = J(:,kk) / norm(J(:,kk), 2);
@@ -273,20 +325,8 @@ e1 = [1; zeros(2*numk-1,1)];        % First basis vector for R^n
 % num_frames = 1;      % Number of frames to reconstruct
 % num_frames = length(target_frame);
 
+
 %================ Construct DN matrix for reference data ==================
-
-% % Normalize the entries so that the voltages sum to zero in each col.
-% % Vref = Vref(1:numCP, :)';      
-% Vref = Vref(:, 1:numCP);        
-% adj = sum(Vref)/L;               
-% % Vref = Vref - adj(ones(L,1),:);
-% Vref = Vref - adj;               
-% Vref = Vref';                    
-
-% Vref = Vref(1:numCP, :)';
-% adj = sum(Vref)/L;
-% Vref = Vref - adj(ones(L,1),:);
-% Vref = Vref';
 
 Vref = Vref(1:numCP, :); % 16x16 ==> 15x16 (currentpatterns x electrodes). keep only the 15 linearly ind. current patterns.
 Vref = Vref';            % 16x16 (electrodes x currentpatterns)
@@ -310,29 +350,14 @@ gamma = ones(num_frames,N*N) * NaN;
 for jj = 1:num_frames
     actual_frame = target_frame(jj);     % grab frame to reconstruct.
     V = Vmulti_perf(:, :, actual_frame);
-    
-    gammatemp = zeros(1,numz);
-
-
-    %================= Construct DN matrix for measured data ==============
-    % % Normalize the entries so that the voltages sum to zero in each col.
-    % % V = V(1:numCP,:)'; 
-    % V = V(:, 1:numCP);          
-    % adj = sum(V)/L;             
-    % % V = V - adj(ones(L,1),:);
-    % V = V - adj;                
-    % V = V';                     
-
-    % V = V(1:numCP,:)';
-    % adj = sum(V)/L;
-    % V = V - adj(ones(L,1),:);
-    % V = V';
-
+    V = V.*1000;
     V = V(1:numCP, :);    % 16x16 ==> 15x16 (currentpatterns x electrodes). Keep only the 15 linearly ind. current patterns
     V = V';               % 15x16 ==> 16x15 (electrodes x currentpatterns).
     adj = sum(V)/L;       
     V = V - adj;
     V = V';               % 16x15 ==> 15x16 (currentpatterns x electrodes).
+
+    gammatemp = zeros(1,numz);
 
     Lambda = inv(V * J);   % DN map for the measured frame
     

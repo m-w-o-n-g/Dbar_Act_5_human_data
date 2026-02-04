@@ -26,12 +26,12 @@ save_movie_as_mat = 0;
 data_dir = 'gammas/';
 
 % .mat file containing each frame's gamma_real conductivity reconstruction measurement data.
-data_fname = 'dec20_1125_gamma_cond_distributions_57_1';
+data_fname = 'feb2_230_gamma_cond_distributions_Sbj001_29_1';
 
 load([data_dir, data_fname]); % load gamma_all
 
 movie_outdir = 'Dbar_human_recons_movies';                 % directory for the .mat measurements file and .avi recon movie file.
-movie_mat_fname = 'dec20_1151_%_Dbar_movie_sbj001_57_1_gauss_trunc';    % filename for output .mat measurements file.
+movie_mat_fname = 'feb2_814_%_Dbar_movie_sbj001_29_1_gauss_trunc';    % filename for output .mat measurements file.
 movie_avi_fname = [movie_mat_fname, '.avi'];               % filename for output .avi reconstruction movie.
 
 % create the movie outdir if it doesn't exist.
@@ -135,7 +135,8 @@ for frame_idx = 1:size(gamma_all_smoothed, 3)
     % imagesc(xx,xx,squeeze(gam_real(frame_num,:,:))); % added
 
     % imagesc(xx, xx, rot90(squeeze(gamma_all(:,:, frame_idx))), [datamin, datamax]);
-    imagesc(rot90(gamma_all_smoothed(:, :, frame_idx)));
+    % imagesc(rot90(gamma_all_smoothed(:, :, frame_idx)));
+    imagesc(rot90(gamma_all(:, :, frame_idx)));
 
     caxis([cmin_gamma,cmax_gamma]);
     colorbar
