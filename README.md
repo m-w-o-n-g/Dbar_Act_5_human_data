@@ -8,9 +8,11 @@ This repository has scripts to perform Dbar reconstruction on human data using t
     - contains all the human data collected with the ACT5 machine.
 - Dbar_human_recons_movies folder:
     - Contains the reconstruction movie and corresponding .mat file (with dataset info) for each dataset.
+- siiri_boundary_lower_ring_bdryCoords.txt
+    - The human boundary .txt file to be used for generating reconstructions with a physiologically-accurate boundary shape.
 - trim_dataset_to_16x16.m:
-    - Reshapes data matrices from 32x32 --> 16x16 
-    - Use when 16 electrodes were used for data collection (not 32), but the data was entered into a 32x32 matrix ==> NaN entries that cause issues in the reconstruction scripts if not resolved.
+    - Reshapes sbj02 data matrices from 32x32 --> 16x16
+    - Necessary step for sbj02 reconstructions, as data for sbj02 was collected on 16 electrodes only. 
 - find_highest_avg_cond_frame.m:
     - Finds the **single** frame with the highest avg conductivity.
     - This frame will be used as the reference frame for ventilation datasets and the sbj001 perfusion dataset. 
@@ -47,19 +49,20 @@ This repository has scripts to perform Dbar reconstruction on human data using t
 
 
 
+
 # Datasets Chosen from subject001 and subject002
 
 ### Sbj001_35kHz_vent_24_10_15_10_45_29_1
 - Ventilation set
-- Reconstruction method: 1 reference frame
+- Reconstruction method: no gaussian truncation
 - Reference frame: 361
-- Chosen truncation radisu: 4.0-4.4
+- Chosen truncation radius: 4.0-4.4
 - Frames to use for reconstruction movie: 55-220
 - Frame with the best image of heart and lungs: 70
 
 ### Sbj001_93kHz_perf_24_10_15_11_05_09_1
 - Perfusion set
-- Reconstructio method: 1 reference frame
+- Reconstruction method: no gaussian truncation
 - Reference frame: 399
 - Chosen truncation radius: 3.6-4.2
 - Frames to use for reconstruction movie: 230-300
@@ -67,23 +70,22 @@ This repository has scripts to perform Dbar reconstruction on human data using t
 
 ### Sbj001_93kHz_vent_24_10_15_10_51_57_1
 - Ventilation set
-- Reconstruction method: 1 reference frame
+- Reconstruction method: gaussian truncation
 - Reference frame: 37
 - Chosen truncation radius: 4.1-4.6
 - Frames to use for reconstruction movie: 130-350 (2 breaths) OR 136-236 (1 breath)
 - Frame with best image of heart and lungs: 96
 
 ### Sbj02_2D_16e_24_10_16_12_38_03_93750 
-- Perfusion set
-- Reconstruction method: sliding window reference frame
-- Frames: 2440-2700
-- Reference frames: start-systoles in cardiac cycle 
+- Perfusion set (frames 2440-2700)
+- Reconstruction method: no gaussian truncation
+- Reference frames: start-systoles
 - Chosen truncation radius: 3.6-3.8
 - Frame with best image of heart and lungs: 92
 
 ### Sbj02_2D_16e_24_10_16_12_39_39_93750
 - Ventilation Set
-- Reconstruction method: 1 reference frame
+- Reconstruction method: no gaussian truncation
 - Reference frame: 513
 - Chosen truncation radius: 3.8-4.2
 - Frames to use for reconstruction movie: 1200-1500
