@@ -400,7 +400,7 @@ for frame = all_frames
         
         %texpmat = reshape(texp,Mk,Mk);
 
-        %texp = texp * rmax* dtheta / (eArea); % JM ADDED THE FACTOR RMAX HERE - SEE LINE (5.18) OF ETHAN'S THESIS.  I think a FACTOR CurrAmp^2 does not need to go IN THE DENOMINATOR because our trig patterns do not include the current amplitude
+        texp = texp * rmax* dtheta / (eArea); % JM ADDED THE FACTOR RMAX HERE - SEE LINE (5.18) OF ETHAN'S THESIS.  I think a FACTOR CurrAmp^2 does not need to go IN THE DENOMINATOR because our trig patterns do not include the current amplitude
         
         
         % for plotting only

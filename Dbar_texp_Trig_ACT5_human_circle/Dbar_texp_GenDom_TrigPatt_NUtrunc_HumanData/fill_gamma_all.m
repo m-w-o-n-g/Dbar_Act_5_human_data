@@ -56,7 +56,7 @@ total_runtime = 0;
 % ================================= Choose What to Plot and Save ===================================
 % ==================================================================================================
 save_dbar_output_as_mat_file = 0;
-display_images_to_screen = 0;
+display_images_to_screen = 1;
 save_gam_real_as_mat_file = 1;
 
 
@@ -67,7 +67,7 @@ save_gam_real_as_mat_file = 1;
 data_dir = 'ACT5_humanData/';
 
 % .mat file containing EIT data.
-data_fname = 'Sbj001_35kHz_vent_24_10_15_10_45_29_1';
+data_fname = 'Sbj001_93kHz_vent_24_10_15_10_51_57_1';
 
 % Directory for the program output to be saved to. If it doesn't exist, we'll create it later.
 output_directory = [];
@@ -75,7 +75,7 @@ outdir = 'gammas/';
 out_fname = 'feb2_230_gamma_cond_distributions_Sbj001_29_1.mat';
 
 % File containing list of bdry pts and the directory where it is stored
-bdry_file = 'EllipseBdry_1_952p6mm.txt';
+bdry_file = 'siiri_boundary_lower_ring_bdryCoords.txt';
 bdry_directory = [];
 
 
@@ -83,8 +83,9 @@ bdry_directory = [];
 % ==================================================================================================
 % ======================= Specify Mesh Size Parameters =============================================
 % ==================================================================================================
-Perim_inches = 40;              % Perimeter of boundary (inches).
-Perim = Perim_inches * 0.0254;  % Perimeter of boundary (meters).
+% Perim_inches = 40;              % Perimeter of boundary (inches).
+% Perim = Perim_inches * 0.0254;  % Perimeter of boundary (meters).
+Perim = 0.76;                     % Perimeter of Siiri's boundary (cm).
 
 M = 32;                         % Size of k-grid for Fourier domain is MxM. Enter a power of 2.
                                 % M=16 is nice and fast. M=32 is more accurate. M=64 is super great but slowish
@@ -92,9 +93,9 @@ M = 32;                         % Size of k-grid for Fourier domain is MxM. Ente
 hh = 0.02;                      % Spatial z-grid step size. This changes the number of pixels in your reconstruction.  Smaller value => finer mesh.
                                 % Choose 0.01 <= hh <= 0.065 for best results.
 
-ee = 0.2;                       % Used to compute width of Gaussian window in FT. Smaller = more truncation
+ee = 0.095;                       % Used to compute width of Gaussian window in FT. Smaller = more truncation
 
-max_trunc = 4.2;                  % Specify a circular truncation region for the low-pass Fourier domain filter.
+max_trunc = 4.6;                  % Specify a circular truncation region for the low-pass Fourier domain filter.
                                 % This determines how much high-freq content we allow.
                                 % Final max trunc radius. Choose something bigger.
                         
@@ -112,10 +113,9 @@ L = 32;                  % Number of electrodes
 %===================================================================================================
 %======================================== Specify Reconstruction Parameters ========================
 %===================================================================================================
-ref_frame = 361;
-startframe = 55; 
-endframe = 220;
-% trg_frame = 96; % frame to reconstruct
+ref_frame = 87;
+startframe = 150; 
+endframe = 150;
 
 % determine the total # of frames to reconstruct (we must ignore the reference frame when it's in the range (startframe,endframe))
 if ref_frame >= startframe && ref_frame <= endframe
@@ -188,7 +188,7 @@ for frame = all_frames
     
     
     %================ set up Boundary Data and Arclength function ========================
-    x_bdry = coords(:,1); y_bdry = coords(:,2);
+    x_bdry = coords(:,2); y_bdry = coords(:,1);
     
     % Get polygon data: geom = [ area   X_cen  Y_cen  perimeter ]
     [geom,~,~] = polygeom(x_bdry,y_bdry);
@@ -354,8 +354,8 @@ for frame = all_frames
         Lhat4 = (A2-1i*B2)*Lambda(Ldiv2+1:L-1,Ldiv2+1:L-1)*(C2.'+1i*D2.');
         Lhat = [Lhat1, Lhat2; Lhat3, Lhat4];
         
-        dLambda = (Lhat - refLhat); % transformed DN map, size L-1 x L-1. use for datasets 1,3, . 
-        % dLambda = -(Lhat - refLhat); % transformed DN map, size L-1 x L-1. use for datasets 2, 5.
+        % dLambda = (Lhat - refLhat); % transformed DN map, size L-1 x L-1. use for datasets 1,3, . 
+        dLambda = -(Lhat - refLhat); % transformed DN map, size L-1 x L-1. use for datasets 2, 5.
     
         %==================Compute approx. scattering transform================
         texp = zeros(numk,1);
@@ -745,19 +745,19 @@ for frame = all_frames
 
 
     % ==============================================================
-    % ==== Standardize Colorbar for Individual Frame Plots =========
+    % ==== Standardize Colorbar for INDIVIDUAL Frame Plots =========
     % ==============================================================
     frames_to_plot = 1:num_frames;
     
     % (option 1) og min/max method.
-    datamin = min(min(min(gam_real(frames_to_plot,:,:))));
-    datamax = max(max(max(gam_real(frames_to_plot,:,:))));
-    datarange = datamax-datamin;
+    % datamin = min(min(min(gam_real(frames_to_plot,:,:))));
+    % datamax = max(max(max(gam_real(frames_to_plot,:,:))));
+    % datarange = datamax-datamin;
     
     % (option 2) robust percentile method.
-    % all_vals = gamma_all(:);
-    % datamin = prctile(all_vals, 2);
-    % datamax = prctile(all_vals, 98);
+    all_vals = gamma_all(:);
+    datamin = prctile(all_vals, 2);
+    datamax = prctile(all_vals, 98);
     
     % JUST REMOVED 12/19...
     % datamin = min(min(min(gam_real(frames_to_plot,:,:))));
@@ -767,6 +767,8 @@ for frame = all_frames
     % datamin = datamin + colorbartrunc * datarange; % comment out because percent_to_truncate_colorbar = 0, so this is basiclaly just datamin = datamin.
     % datamax = datamax - colorbartrunc * datarange;
 
+    % (option 4)
+    % delta = max(abs(gamma_all(:,:,jj) - 1), [], 'all');
     
     % ==================================================================================================
     % ================================= Plot Individual Image Reconstructions ==========================
@@ -789,6 +791,7 @@ for frame = all_frames
             % generate the pretty image reconstruction
             % imagesc(xx,xx,rot90(squeeze(gam_real(jj,:,:))),[datamin, datamax]);
             imagesc(xx, xx, rot90(squeeze(gamma_all(:,:,jj))), [datamin, datamax]) % use for datasets 1, 3, 5, JUST REMOVED 12/19.
+            % imagesc(xx, xx, rot90(squeeze(gamma_all(:,:,jj))), [1-delta, 1+delta]) % use for datasets 1, 3, 5, JUST REMOVED 12/19.  
             % imagesc(xx, xx, squeeze(gamma_all(:,:,jj)), [datamin, datamax]) % use for datasets 2
             
             % imagesc(xx,xx,flipud(squeeze(gamma_all(1,:,:))),[datamin, datamax]); % JUST ADDED 12/19
