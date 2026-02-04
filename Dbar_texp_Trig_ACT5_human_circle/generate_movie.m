@@ -26,12 +26,12 @@ save_movie_as_mat = 0;
 data_dir = 'gammas/';
 
 % .mat file containing each frame's gamma_real conductivity reconstruction measurement data.
-data_fname = 'dec19_1933_gamma_cond_distributions_57_1';
+data_fname = 'feb4_1042_gamma_cond_distributions_Sbj001_57_1';
 
 load([data_dir, data_fname]); % load gamma_all
 
 movie_outdir = 'Dbar_human_recons_movies';                 % directory for the .mat measurements file and .avi recon movie file.
-movie_mat_fname = 'dec19_2114_Dbar_movie_sbj001_57_1';                % filename for output .mat measurements file.
+movie_mat_fname = 'feb4_1426_Dbar_movie_sbj001_57_1';                % filename for output .mat measurements file.
 movie_avi_fname = [movie_mat_fname, '.avi'];               % filename for output .avi reconstruction movie.
 
 % create the movie outdir if it doesn't exist.
@@ -41,27 +41,46 @@ end
 
 
 % =================================================================================================
-% ================= Standardize Colorbar for Individual Frame Plots ===============================
+% ================= Smoothing gamma_all ===========================================================
+% =================================================================================================
+% this is an exponential moving avg == it's causal / only looks at the past.
+% gamma_smoothed = gamma_all;
+% alpha = 0.3;
+% for k = 2:size(gamma_all, 3)
+%     gamma_smoothed(:,:,k) = alpha * gamma_all(:,:,k) + (1 - alpha) * gamma_smoothed(:,:,k-1);
+% end
+
+% this is a centered moving avg == it looks at the past and present.
+% use a moving avg plot to smooth the gammas in gamma_all by removing high-frequency noise.
+% adding the 'gaussian' parameter to smooth in time (different from adding gaussian to dbar algorithm because that was smoothing in space).
+gamma_smoothed = smoothdata(gamma_all, 3, 'gaussian', 20);
+
+
+
+
+
+% =================================================================================================
+% ================= Standardize Colorbar for MOVIE plotting ===============================
 % =================================================================================================
 % truncate the colorbar. enter an integer between 0 and 10. if displaying a small number of images, choose something smaller
-percent_to_truncate_colorbar = 0;
+% percent_to_truncate_colorbar = 0;
 
 %(option 1) og min/max method.
-max_gamma_all = max(max(max(gamma_all)));
-min_gamma_all = min(min(min(gamma_all)));
-range_gamma = max_gamma_all - min_gamma_all;
-cmax_gamma = max_gamma_all - 0.1*range_gamma;
-cmin_gamma = min_gamma_all + 0.1*range_gamma;
+% max_gamma_all = max(max(max(gamma_all)));
+% min_gamma_all = min(min(min(gamma_all)));
+% range_gamma = max_gamma_all - min_gamma_all;
+% cmax_gamma = max_gamma_all - 0.1*range_gamma;
+% cmin_gamma = min_gamma_all + 0.1*range_gamma;
 
 % (option 2) robust percentile method.
-% all_vals = gamma_all(:);
-% cmin_gamma = prctile(all_vals, 1);
-% cmax_gamma = prctile(all_vals, 99);
+all_vals = gamma_smoothed(:);
+cmin_gamma = prctile(all_vals, 2);
+cmax_gamma = prctile(all_vals, 98);
 
 
 
 % ==================================================================================================
-% =================================== Create a Movie with the Image Reconstructions ================
+% =================================== Set up plotting params and figure for movie ==================
 % ==================================================================================================
 cmap = 'jet'; % select colormap for plots.
 
@@ -77,54 +96,58 @@ set(writerObj,'FrameRate',5);
 % open the writer object.
 open(writerObj);
 
-% initialize variable to keep track of the current frame # in the for-loop.
-frame_idx = 1; 
+% % create a figure window
+% if display_movie_to_screen == 1
+%     figure = figure('visible', 'on');
+% else
+%     figure = figure('visible', 'off');
+% end
 
-all_frames = 1:size(gamma_all, 3);
+% initialize the plot with 1 frame
+image = imagesc(xx, xx, rot90(gamma_smoothed(:,:,1)));
+
+% SET params for image tiles (doing this outside the loop so it's standardized across tiles).
+colormap(cmap)
+clim([cmin_gamma, cmax_gamma]);
+colorbar
+axis square
+set(gca, 'Ydir', 'normal')
+title_for_tile = title('Frame number: 1');
+
+
+% ==================================================================================================
+% =================================== Generate Movie ==================================================
+% ==================================================================================================
+all_frames = 1:size(gamma_smoothed, 3);
+num_frames = length(all_frames);
 
 % iterate over all frames
 for frame_num = all_frames
     
-    disp("frame number: " + frame_num)
-
-    % choose [yes/no] to display movie to screen.
-    if display_movie_to_screen == 1
-        figure('visible','on');
-    else
-        figure('Visible','off');
-    end
-
-    colormap(cmap)
-
-    % generate the pretty image reconstruction.
-    imagesc(flipud(gamma_all(:,:,frame_idx))) % this one was og
+    disp("Frame number: " + frame_num)
     
-    caxis([cmin_gamma,cmax_gamma])
-    colorbar
-    axis square
-    set(gca, 'Ydir', 'normal')
+    curr_data = rot90(gamma_smoothed(:,:,frame_num));
 
-    title(['Frame number = ',num2str(frame_num)]) % add title to figure for reference frame number.
-    
-    frame_num_double = double(frame_num); % this conversion is somehow needed for title.
-    
-    % Convert frame_num to string.
-    frame_str = ['Frame Number: ' num2str(frame_num_double)];
-        
-    frame_pick = getframe(gcf);
-    
+    set(image, 'CData', curr_data);
+ 
+    set(title_for_tile, 'String', sprintf('Frame Number: %d', frame_num));
+
+    drawnow;
+
+    frame_pick = getframe(figure);
+
     writeVideo(writerObj, frame_pick);
-    
-    frame_idx = frame_idx + 1; % to iterate through all frames in gamma all.
 
 end % END PLOTTING MOVIE
 
 
 %% save movie to file
-% choose [yes/no] to save the movie to a .avi file.
+% choose [yes/no] to save the movie params to a .mat file.
 if save_movie_as_mat == 1
     save([movie_outdir '/' movie_mat_fname, '.mat'], 'gamma_all', 'hh', 'xx');
 end
 
 % close the video writer object
 close(writerObj);
+
+disp("Movie has been generated.")
