@@ -12,6 +12,7 @@
 % Date Modified:     December 10, 2025
 % 
 % ==================================================================================================
+clear
 
 % ==================================================================================================
 % ================================= Choose What to Plot and Save ===================================
@@ -26,12 +27,12 @@ save_movie_as_mat = 0;
 data_dir = 'gammas/';
 
 % .mat file containing each frame's gamma_real conductivity reconstruction measurement data.
-data_fname = 'feb4_1042_gamma_cond_distributions_Sbj001_57_1';
+data_fname = 'feb5_427_gamma_cond_distributions_Sbj002_perf_chunk';
 
 load([data_dir, data_fname]); % load gamma_all
 
 movie_outdir = 'Dbar_human_recons_movies';                 % directory for the .mat measurements file and .avi recon movie file.
-movie_mat_fname = 'feb4_1426_Dbar_movie_sbj001_57_1';                % filename for output .mat measurements file.
+movie_mat_fname = 'feb5_819_Dbar_movie_sbj002_perf_chunk';                % filename for output .mat measurements file.
 movie_avi_fname = [movie_mat_fname, '.avi'];               % filename for output .avi reconstruction movie.
 
 % create the movie outdir if it doesn't exist.
@@ -74,8 +75,8 @@ gamma_smoothed = smoothdata(gamma_all, 3, 'gaussian', 20);
 
 % (option 2) robust percentile method.
 all_vals = gamma_smoothed(:);
-cmin_gamma = prctile(all_vals, 2);
-cmax_gamma = prctile(all_vals, 98);
+cmin_gamma = prctile(all_vals, 1);
+cmax_gamma = prctile(all_vals, 99);
 
 
 
@@ -96,15 +97,15 @@ set(writerObj,'FrameRate',5);
 % open the writer object.
 open(writerObj);
 
-% % create a figure window
-% if display_movie_to_screen == 1
-%     figure = figure('visible', 'on');
-% else
-%     figure = figure('visible', 'off');
-% end
+% create a figure window
+if display_movie_to_screen == 1
+    figure = figure('visible', 'on');
+else
+    figure = figure('visible', 'off');
+end
 
 % initialize the plot with 1 frame
-image = imagesc(xx, xx, rot90(gamma_smoothed(:,:,1)));
+image = imagesc(xx, xx, flipud(gamma_smoothed(:,:,1)));
 
 % SET params for image tiles (doing this outside the loop so it's standardized across tiles).
 colormap(cmap)
@@ -126,7 +127,7 @@ for frame_num = all_frames
     
     disp("Frame number: " + frame_num)
     
-    curr_data = rot90(gamma_smoothed(:,:,frame_num));
+    curr_data = flipud(gamma_smoothed(:,:,frame_num));
 
     set(image, 'CData', curr_data);
  
