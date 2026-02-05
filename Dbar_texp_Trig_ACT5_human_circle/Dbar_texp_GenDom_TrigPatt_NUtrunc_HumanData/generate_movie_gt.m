@@ -12,6 +12,7 @@
 % Date Modified:     December 10, 2025
 % 
 % ==================================================================================================
+clear 
 
 % ==================================================================================================
 % ================================= Choose What to Plot and Save ===================================
@@ -26,12 +27,12 @@ save_movie_as_mat = 0;
 data_dir = 'gammas/';
 
 % .mat file containing each frame's gamma_real conductivity reconstruction measurement data.
-data_fname = 'feb2_230_gamma_cond_distributions_Sbj001_29_1';
+data_fname = 'feb4_2340_gamma_cond_distributions_Sbj002_vent_set';
 
 load([data_dir, data_fname]); % load gamma_all
 
 movie_outdir = 'Dbar_human_recons_movies';                 % directory for the .mat measurements file and .avi recon movie file.
-movie_mat_fname = 'feb2_814_%_Dbar_movie_sbj001_29_1_gauss_trunc';    % filename for output .mat measurements file.
+movie_mat_fname = 'feb4_2359_Dbar_movie_sbj002_vent_set';                % filename for output .mat measurements file.
 movie_avi_fname = [movie_mat_fname, '.avi'];               % filename for output .avi reconstruction movie.
 
 % create the movie outdir if it doesn't exist.
@@ -40,24 +41,110 @@ if ~exist(movie_outdir, 'dir')
 end
 
 
+% =================================================================================================
+% ================= Smoothing gamma_all ===========================================================
+% =================================================================================================
+% this is an exponential moving avg == it's causal / only looks at the past.
+% gamma_smoothed = gamma_all;
+% alpha = 0.3;
+% for k = 2:size(gamma_all, 3)
+%     gamma_smoothed(:,:,k) = alpha * gamma_all(:,:,k) + (1 - alpha) * gamma_smoothed(:,:,k-1);
+% end
+
+% this is a centered moving avg == it looks at the past and present.
+% use a moving avg plot to smooth the gammas in gamma_all by removing high-frequency noise.
+% adding the 'gaussian' parameter to smooth in time (different from adding gaussian to dbar algorithm because that was smoothing in space).
+gamma_smoothed = smoothdata(gamma_all, 3, 'gaussian', 5);
+
+
+
+
+
+
+% % =========================================================================
+% % DIAGNOSTIC TOOL: Find the "Ghost" Lung
+% % =========================================================================
+% 
+% % 1. Create a map of "Change." The lungs will be the brightest spots.
+% activity_map = std(gamma_all, 0, 3); 
+% 
+% figure('Name', 'CLICK THE STUCK LUNG');
+% imagesc(activity_map);
+% colorbar;
+% title('Click on the center of the Right Lung now...');
+% axis square;
+% colormap(jet);
+% 
+% % 2. Let you click on the pixel you are worried about
+% [y_click, x_click] = ginput(1); % Returns (x, y) coordinates
+% c_idx = round(y_click); % Column index (x-axis click)
+% r_idx = round(x_click); % Row index (y-axis click)
+% 
+% close(gcf); % Close the map
+% 
+% % 3. Extract and Plot the Time Course for THAT pixel
+% pixel_raw = squeeze(gamma_all(r_idx, c_idx, :));
+% 
+% % Re-calculate smooth with your window of 7
+% if exist('smoothdata', 'file')
+%     pixel_smooth = smoothdata(pixel_raw, 'gaussian', 7);
+% else
+%     pixel_smooth = conv(pixel_raw, ones(1,7)/7, 'same');
+% end
+% 
+% % 4. Plot the TRUTH
+% figure('Name', 'Lung Truth Graph');
+% plot(pixel_raw, 'Color', [0.7 0.7 0.7], 'DisplayName', 'Raw Data'); hold on;
+% plot(pixel_smooth, 'LineWidth', 2, 'Color', 'r', 'DisplayName', 'Smoothed (Window 7)');
+% yline(1.0, 'k--', 'Baseline (1.0)', 'LineWidth', 2); 
+% legend;
+% grid on;
+% title(['Conductivity at Row ' num2str(r_idx) ', Col ' num2str(c_idx)]);
+% xlabel('Frame Number');
+% ylabel('Conductivity (Gamma)');
+
+
+
+
+
+
+
+
+
+
+% % Pick a pixel index that corresponds to the Right Lung
+% % (You might need to adjust these indices based on your grid size)
+% % For a 20x20 grid, row 10, col 15 is often right lung.
+% r_idx = 10; 
+% c_idx = 15; 
+% 
+% % Extract the time course for this pixel
+% pixel_raw = squeeze(gamma_all(r_idx, c_idx, :));
+% pixel_smooth = squeeze(gamma_smoothed(r_idx, c_idx, :));
+% 
+% figure;
+% plot(pixel_raw, 'Color', [0.7 0.7 0.7], 'DisplayName', 'Raw Data'); hold on;
+% plot(pixel_smooth, 'LineWidth', 2, 'Color', 'r', 'DisplayName', 'Smoothed (Window 20)');
+% yline(1.0, 'k--', 'Baseline (1.0)'); % The theoretical "empty" line
+% legend;
+% title('Right Lung Conductivity Over Time');
+% xlabel('Frame Number');
+% ylabel('Conductivity');
+% 
+% % IF the red line never touches the dotted black line, 
+% % your data simply does not return to baseline (Reference Frame issue).
+% % IF the grey line touches the dotted line but the red line doesn't,
+% % your smoothing window (20) is too big.
+
+
+
+
 
 % =================================================================================================
-% ================= Smooth Gamma_all ==============================================================
-% =================================================================================================
-gamma_all_smoothed = gamma_all;
-
-alpha = 0.7;  % 0.6–0.8 works well
-for k = 2:size(gamma_all,3)
-    gamma_all_smoothed(:,:,k) = ...
-        alpha*gamma_all(:,:,k) + (1-alpha)*gamma_all_smoothed(:,:,k-1);
-end
-
-
-% =================================================================================================
-% ================= Standardize Colorbar for Individual Frame Plots ===============================
+% ================= Standardize Colorbar for MOVIE plotting ===============================
 % =================================================================================================
 % truncate the colorbar. enter an integer between 0 and 10. if displaying a small number of images, choose something smaller
-percent_to_truncate_colorbar = 0;
+% percent_to_truncate_colorbar = 0;
 
 %(option 1) og min/max method.
 % max_gamma_all = max(max(max(gamma_all)));
@@ -67,37 +154,18 @@ percent_to_truncate_colorbar = 0;
 % cmin_gamma = min_gamma_all + 0.1*range_gamma;
 
 % (option 2) robust percentile method.
-all_vals = gamma_all_smoothed(:);
-cmin_gamma = prctile(all_vals, 2);
-cmax_gamma = prctile(all_vals, 98);
-
-% JUST REMOVED 12/19...
-% % Standardizing the colorbar for the image reconstruction.
-% max_gamma_all = max(max(max(gamma_all)));
-% min_gamma_all = min(min(min(gamma_all)));
-% range_gamma = max_gamma_all - min_gamma_all;
-% cmax_gamma = max_gamma_all - 0.2*range_gamma; % should this be .2 or 0?
-% cmin_gamma = min_gamma_all + 0.2*range_gamma;
-
-% % recompute datamin and datamax from gamma_all for consistent colorbar scaling. 
-% datamin = min(gamma_all(:));
-% datamax = max(gamma_all(:)); 
-% datarange = datamax-datamin;
-% colorbartrunc = percent_to_truncate_colorbar * .01;
-% datamin = datamin + colorbartrunc * datarange;
-% datamax = datamax - colorbartrunc * datarange;
-
+all_vals = gamma_smoothed(:);
+cmin_gamma = prctile(all_vals, 3);
+cmax_gamma = prctile(all_vals, 97);
 
 
 
 % ==================================================================================================
-% =================================== Create a Movie with the Image Reconstructions ================
+% =================================== Set up plotting params and figure for movie ==================
 % ==================================================================================================
+cmap = 'jet'; % select colormap for plots.
 
-% Select colormap for figures
-cmap = 'jet';
-
-hh = 0.2; 
+hh = 0.2;
 xx = -1:hh:1;
 
 % create video writer object in the output directory.
@@ -109,81 +177,58 @@ set(writerObj,'FrameRate',5);
 % open the writer object.
 open(writerObj);
 
+% create a figure window
+if display_movie_to_screen == 1
+    figure = figure('visible', 'on');
+else
+    figure = figure('visible', 'off');
+end
 
-% initialize variable to keep track of the current frame # in the for-loop.
-% frame_idx = 1; 
+% initialize the plot with 1 frame
+image = imagesc(xx, xx, rot90(gamma_smoothed(:,:,1)));
+
+% SET params for image tiles (doing this outside the loop so it's standardized across tiles).
+colormap(cmap)
+clim([cmin_gamma, cmax_gamma]);
+colorbar
+axis square
+set(gca, 'Ydir', 'normal')
+title_for_tile = title('Frame number: 1');
 
 
-%% Plot movie
-% iterate over all frames (MINUS the reference frame)
-% for frame_num = all_frames
-for frame_idx = 1:size(gamma_all_smoothed, 3)
+% ==================================================================================================
+% =================================== Generate Movie ==================================================
+% ==================================================================================================
+all_frames = 1:size(gamma_smoothed, 3);
+num_frames = length(all_frames);
 
-    disp("frame number: " + frame_idx)
+% iterate over all frames
+for frame_num = all_frames
     
-    % choose [yes/no] to display each frame to screen.
-    if display_movie_to_screen == 1 
-        figure('visible','on');
-    else
-        figure('Visible','off');
-    end
-
-    colormap(cmap)
-
-    % generate the pretty image reconstruction (this is from new code)
-    % imagesc(xx,xx,squeeze(gam_real(frame_num,:,:)),[datamin, datamax]);
-    % imagesc(xx,xx,squeeze(gam_real(frame_num,:,:))); % added
-
-    % imagesc(xx, xx, rot90(squeeze(gamma_all(:,:, frame_idx))), [datamin, datamax]);
-    % imagesc(rot90(gamma_all_smoothed(:, :, frame_idx)));
-    imagesc(rot90(gamma_all(:, :, frame_idx)));
-
-    caxis([cmin_gamma,cmax_gamma]);
-    colorbar
-    axis square
-    set(gca, 'Ydir', 'normal');
-    % axis([-1 1 -1 1 ]);
-    % colorbar; % added
-    % axis off
-    % axis square;
-
-    % add title to each frame slide.
-    title(['Frame number = ', num2str(frame_idx)])
-
-
-    % generate the pretty image reconstruction (this is from og movie script)
-    % imagesc(flipud(rot90(gamma_all(:,:,frame_idx))))
-    % set(gca, 'Ydir', 'normal')
-    % caxis([cmin_gamma,cmax_gamma])
-    % colorbar
-    % axis square
-
-    % add title to movie figure
-    % title(['Frame number = ',num2str(frame_num)]); 
-    % title(['Frame number = ',num2str(frame_idx)]); 
+    disp("Frame number: " + frame_num)
     
-    % frame_num_double = double(frame_num); % this conversion is somehow needed for title.
-    frame_num_double = double(frame_idx); % this conversion is somehow needed for title.
+    curr_data = rot90(gamma_smoothed(:,:,frame_num));
 
-    % Convert frame_num to string.
-    frame_str = ['Frame Number: ' num2str(frame_num_double)];
-        
-    frame_pick = getframe(gcf);
-    
+    set(image, 'CData', curr_data);
+ 
+    set(title_for_tile, 'String', sprintf('Frame Number: %d', frame_num));
+
+    drawnow;
+
+    frame_pick = getframe(figure);
+
     writeVideo(writerObj, frame_pick);
-    
-    % frame_idx = frame_idx + 1; % to iterate through all frames in gamma all.
 
 end % END PLOTTING MOVIE
+
+
+%% save movie to file
+% choose [yes/no] to save the movie params to a .mat file.
+if save_movie_as_mat == 1
+    save([movie_outdir '/' movie_mat_fname, '.mat'], 'gamma_all', 'hh', 'xx');
+end
 
 % close the video writer object
 close(writerObj);
 
-
-% choose [yes/no] to save the .mat file with measurement data.
-if save_movie_as_mat == 1
-    % save([movie_outstr, '.mat'], 'gam_real', 'init_trunc', 'max_trunc', 'Mk', 'hz', 'xx', 'numz',  'refframe', 'texpmat' );
-    % save([movie_outstr, '.mat']);
-    % save([movie_outstr '.mat'], [output_directory, dataset_name, '_GenDom_Skip2Trig', num2str(refimg), '_texp_R', '_',  num2str(max_trunc), '_M', num2str(M),'_zstep', num2str(hh), '.mat'], 'gamma_all', 'max_trunc', 'M', 'hh', 'xx', 'numz' )
-    save([movie_outdir '/' movie_mat_fname, '.mat'], 'gamma_all', 'hh', 'xx');
-end
+disp("Movie has been generated.")

@@ -11,13 +11,13 @@ clear all
 datadir = 'ACT5_humanData/';
 
 % File name for .mat file containing EIT data 
-datafname = 'Sbj02_2D_16e_24_10_16_12_38_03_93750';  
+datafname = 'modified_16x16_Sbj02_2D_16e_24_10_16_12_39_39_93750';  
 
 load([datadir, datafname]);
 
 % start_frame and end_frame given by Jennifer. (127 frames)
-start_frame = 1500;
-end_frame = 1700; 
+start_frame = 1283;
+end_frame = 1579; 
 
 % update variables that rely on frame number.
 EOF_data = EOF_data(:,start_frame:end_frame);
@@ -30,4 +30,4 @@ meas_imp_C = meas_imp_C(:,start_frame:end_frame);
 meas_imp_R = meas_imp_R(:,start_frame:end_frame);
 
 
-save([datadir,'perf_chunk_1_',datafname])
+save([datadir,'perf_chunk_',datafname])

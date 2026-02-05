@@ -7,7 +7,7 @@
 %
 % This is for…
 % - ACT5 human data
-% - circular domain
+% - human boundary
 % - trig patterns
 % - Gaussian truncation
 % - reference frame used: ONE frame found using our “find-best-refframe” script
@@ -56,7 +56,7 @@ total_runtime = 0;
 % ================================= Choose What to Plot and Save ===================================
 % ==================================================================================================
 save_dbar_output_as_mat_file = 0;
-display_images_to_screen = 1;
+display_images_to_screen = 0;
 save_gam_real_as_mat_file = 1;
 
 
@@ -67,12 +67,12 @@ save_gam_real_as_mat_file = 1;
 data_dir = 'ACT5_humanData/';
 
 % .mat file containing EIT data.
-data_fname = 'Sbj001_93kHz_vent_24_10_15_10_51_57_1';
+data_fname = 'perf_chunk_Sbj02_2D_16e_24_10_16_12_39_39_93750';
 
 % Directory for the program output to be saved to. If it doesn't exist, we'll create it later.
 output_directory = [];
 outdir = 'gammas/';
-out_fname = 'feb2_230_gamma_cond_distributions_Sbj001_29_1.mat';
+out_fname = 'feb4_2340_gamma_cond_distributions_Sbj002_vent_set.mat';
 
 % File containing list of bdry pts and the directory where it is stored
 bdry_file = 'siiri_boundary_lower_ring_bdryCoords.txt';
@@ -83,39 +83,36 @@ bdry_directory = [];
 % ==================================================================================================
 % ======================= Specify Mesh Size Parameters =============================================
 % ==================================================================================================
-% Perim_inches = 40;              % Perimeter of boundary (inches).
-% Perim = Perim_inches * 0.0254;  % Perimeter of boundary (meters).
-Perim = 0.76;                     % Perimeter of Siiri's boundary (cm).
+Perim = 0.76;         % Perimeter of Siiri's boundary (cm).
 
-M = 32;                         % Size of k-grid for Fourier domain is MxM. Enter a power of 2.
-                                % M=16 is nice and fast. M=32 is more accurate. M=64 is super great but slowish
+M = 32;               % Size of k-grid for Fourier domain is MxM. Enter a power of 2.
+                      % M=16 is nice and fast. M=32 is more accurate. M=64 is super great but slowish
 
-hh = 0.02;                      % Spatial z-grid step size. This changes the number of pixels in your reconstruction.  Smaller value => finer mesh.
-                                % Choose 0.01 <= hh <= 0.065 for best results.
+hh = 0.02;            % Spatial z-grid step size. This changes the number of pixels in your reconstruction.  Smaller value => finer mesh.
+                      % Choose 0.01 <= hh <= 0.065 for best results.
 
-ee = 0.095;                       % Used to compute width of Gaussian window in FT. Smaller = more truncation
+ee = 0.08;           % Used to compute width of Gaussian window in FT. Smaller = more truncation
 
-max_trunc = 4.6;                  % Specify a circular truncation region for the low-pass Fourier domain filter.
-                                % This determines how much high-freq content we allow.
-                                % Final max trunc radius. Choose something bigger.
+max_trunc = 4.6;      % Specify a circular truncation region for the low-pass Fourier domain filter.
+                      % This determines how much high-freq content we allow.
+                      % Final max trunc radius. Choose something bigger.
                         
-% Truncates colorbar for display purposes. Enter an integer from 0 to 10.
-% If displaying a small number of images, choose something smaller.
-percent_to_truncate_colorbar = 2;
+cmap = 'jet';         % Select colormap for figures
 
-% Select colormap for figures
-cmap = 'jet';
 
-L = 32;                  % Number of electrodes
 
+% active_elecs = 1:32; 
+% L = 32;
+active_elecs = 1:16;
+L = 16;
 
 
 %===================================================================================================
 %======================================== Specify Reconstruction Parameters ========================
 %===================================================================================================
-ref_frame = 87;
-startframe = 150; 
-endframe = 150;
+ref_frame = 134;
+startframe = 1; 
+endframe = 250;
 
 % determine the total # of frames to reconstruct (we must ignore the reference frame when it's in the range (startframe,endframe))
 if ref_frame >= startframe && ref_frame <= endframe
@@ -152,11 +149,13 @@ for frame = all_frames
     
     % Load the voltage data for current frame -- i.e. the thing we want to reconstruct
     V_total = frame_voltage;            % grab voltages for all frames in .mat file
+    V_total = V_total(active_elecs, active_elecs, :);
     V = V_total(:,:,frame);             % grab the current frame voltages.
     V(:,L) = [];                        % drop the 32nd column. This fixes the singular matrix problem.
     V = V.*1000;                        % scale voltages by 1000
     
     J = cur_pattern;
+    J = J(active_elecs, active_elecs);
     J(:,L) = [];                        % drop the 32nd column.
     % total_num_frames = 1;
     
@@ -716,28 +715,6 @@ for frame = all_frames
 
     frame_idx = frame_idx + 1;
 
-
-
-
-    % if frame_idx > 2  % only compare after at least 2 frames
-    %     prev_frame = gamma_all(:,:,frame_idx-2);
-    %     curr_frame = gamma_all(:,:,frame_idx-1);
-    %     max_diff = max(abs(curr_frame(:) - prev_frame(:)));
-    %     fprintf('Max difference between frame %d and %d: %.4f\n', frame_idx-2, frame_idx-1, max_diff);
-    % end
-
-
-
-
-    
-    % % Switch to DICOM orientation
-    % for jj = 1:num_frames
-    %     gam_real(jj,:,:) = squeeze(gam_real(jj,:,:));
-    % end
-    
-    % select frame gamma conductivity reconstructions to save 
-    % saved_gam_real = gam_real(:,:,frames_to_plot); 
-
     if ~exist(outdir, 'dir')
         mkdir(outdir);
     end
@@ -775,8 +752,9 @@ for frame = all_frames
     % ==================================================================================================
     if display_images_to_screen == 1
         for jj = frames_to_plot
-            h = figure; % create blank figure window
-
+            % h = figure; % create blank figure window
+            figure;
+            disp("FIGUREE")
             % figure;
             % subplot(1,2,1);
             % imagesc(xx, xx, rot90(real(gamma_all(:,:,jj))));
@@ -816,6 +794,7 @@ for frame = all_frames
     fclose('all');
 
 end % END MAIN FOR-LOOP ==> gamma_all has been completely filled with 'total_frames'-# of reconstructions.
+
 disp("All frames have now been reconstructed")
 
 
@@ -826,7 +805,5 @@ disp("All frames have now been reconstructed")
 % choose [yes/no] to save gamma conductivity reconstructions to a .mat file to make a movie with (in a separate script)
 if save_gam_real_as_mat_file == 1
     save([outdir out_fname], 'gamma_all');
+    disp("gamma_all has been saved into a .mat file")
 end 
-
-disp("gamma_all has been saved into a .mat file")
-

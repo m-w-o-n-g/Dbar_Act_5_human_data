@@ -56,8 +56,8 @@ total_runtime = 0;
 % ================================= Choose What to Plot and Save ===================================
 % ==================================================================================================
 save_dbar_output_as_mat_file = 0;
-display_images_to_screen = 1;
-save_gam_real_as_mat_file = 1;
+display_images_to_screen = 0;
+save_gam_real_as_mat_file = 0;
 
 
 %===================================================================================================
@@ -67,7 +67,7 @@ save_gam_real_as_mat_file = 1;
 data_dir = 'ACT5_humanData/';
 
 % .mat file containing EIT data.
-data_fname = 'Sbj001_93kHz_vent_24_10_15_10_51_57_1';
+data_fname = 'perf_chunk_Sbj02_2D_16e_24_10_16_12_39_39_93750';
 
 % File containing list of bdry pts and the directory where it is stored
 bdry_file = 'siiri_boundary_lower_ring_bdryCoords.txt';
@@ -101,7 +101,10 @@ percent_to_truncate_colorbar = 0;
 % Select colormap for figures
 cmap = 'jet';
 
-L = 32;                  % Number of electrodes
+% active_elecs = 1:32; 
+% L = 32;
+active_elecs = 1:16;
+L = 16;
 
 
 
@@ -110,7 +113,7 @@ L = 32;                  % Number of electrodes
 %===================================================================================================
 ref_frame = 10;
 startframe = 1; 
-endframe = 500;
+endframe = 297;
 highest_cond = 0; 
 best_frame = 0;
 
@@ -149,11 +152,13 @@ for frame = all_frames
     
     % Load the voltage data for current frame -- i.e. the thing we want to reconstruct
     V_total = frame_voltage;            % grab voltages for all frames in .mat file
+    V_total = V_total(active_elecs, active_elecs, :);
     V = V_total(:,:,frame);             % grab the current frame voltages.
     V(:,L) = [];                        % drop the 32nd column. This fixes the singular matrix problem.
     V = V.*1000;                        % scale voltages by 1000
     
     J = cur_pattern;
+    J = J(active_elecs, active_elecs);
     J(:,L) = [];                        % drop the 32nd column.
     % total_num_frames = 1;
     
