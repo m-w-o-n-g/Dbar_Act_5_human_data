@@ -48,9 +48,9 @@ This performs Dbar reconstruction on human data using the Act 5 machine under th
 
 ### Sbj001_35kHz_vent_24_10_15_10_45_29_1
 - Ventilation set
-- Reconstruction method: no gaussian truncation
+- Reconstruction method: gaussian truncation
 - Reference frame: 361
-- Chosen truncation radius: 4.0-4.4
+- Chosen truncation radius: 4.6; ee: 0.06
 - Frames to use for reconstruction movie: 55-220
 - Frame with the best image of heart and lungs: 70
 
@@ -64,8 +64,8 @@ This performs Dbar reconstruction on human data using the Act 5 machine under th
 
 ### Sbj001_93kHz_vent_24_10_15_10_51_57_1
 - Ventilation set
-- Reconstruction method: gaussian truncation
-- Reference frame: 87
+- Reconstruction method: no gaussian truncation
+- Reference frame: 37
 - Chosen truncation radius: 4.1-4.6
 - Frames to use for reconstruction movie: 130-350 (2 breaths) OR 136-236 (1 breath)
 - Frame with best image of heart and lungs: 96
@@ -74,14 +74,13 @@ This performs Dbar reconstruction on human data using the Act 5 machine under th
 - Perfusion set (frames 2440-2700)
 - Reconstruction method: no gaussian truncation
 - Reference frames: start-systoles
-- Chosen truncation radius: 3.6-3.8
-- Frame with best image of heart and lungs: 92
+- Chosen truncation radius: 3.8-4.1
+- Frame with best image of heart and lungs: 58
 
 ### Sbj02_2D_16e_24_10_16_12_39_39_93750
 - Ventilation Set
 - Reconstruction method: no gaussian truncation
-- Reference frame: 513
-- Chosen truncation radius: 3.8-4.2
-- Frames to use for reconstruction movie: 1200-1500
-- Frame with best image of heart and lungs: 1335
-
+- Reference frame: 1417
+- Chosen truncation radius: 3.8-4.3
+- Frames to use for reconstruction movie: 1283-1579
+- Frame with best image of heart and lungs: 1484
